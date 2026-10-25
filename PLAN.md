@@ -155,9 +155,9 @@ Además del smoke test automático, se ejecutó la aplicación real en modo offs
 
 ### Paso 5 — Miniaturas
 
-- [ ] Carga asíncrona y secuencial de miniaturas con tamaño acotado
-- [ ] Panel lateral con página actual resaltada y navegación por clic
-- [ ] Cancelación y liberación al cerrar o cambiar de documento
+- [x] Carga asíncrona y secuencial de miniaturas con tamaño acotado
+- [x] Panel lateral con página actual resaltada y navegación por clic
+- [x] Cancelación y liberación al cerrar o cambiar de documento
 
 ### Paso 6 — Verificación
 
@@ -246,6 +246,7 @@ EditorPDF-Local/
 | 2026-10-24 | Pasos 4, 5 y 6 completados: ventana PySide6, visor, planificador de render con descarte de resultados obsoletos, caché LRU, zoom/ajuste/rotación, apertura por diálogo y arrastre, contraseña, errores en diálogos, bootstrap, registro rotativo y rutas sin Qt. 104 pruebas nuevas (44 de interfaz), 225 en total. Smoke test real offscreen con PyMuPDF y navegación/zoom/rotación. |
 | 2026-10-25 | Iteración 2 iniciada. Paso 1 completado: modelos de edición, comandos inmutables, aplicación de comandos, historial y sesión con deshacer/rehacer. 31 pruebas nuevas. |
 | 2026-10-25 | Paso 2 completado: `CoordinateMapper` con zoom y las cuatro rotaciones, selección de región, dibujo de texto e imágenes, selección y transformación por arrastre en el lienzo. 47 pruebas nuevas, 303 en total. |
+| 2026-10-25 | Paso 5 completado: cargador secuencial de miniaturas en segundo plano, panel lateral navegable y cancelación al cerrar. 13 pruebas nuevas, 316 en total. |
 
 ## 10. Notas de entorno
 

@@ -17,6 +17,7 @@ from PySide6.QtGui import (
     QResizeEvent,
 )
 from PySide6.QtWidgets import (
+    QDockWidget,
     QFileDialog,
     QInputDialog,
     QLabel,
@@ -38,12 +39,15 @@ from bene.domain.models import DocumentInfo, PageInfo, PageKind
 from bene.presentation.fit import FitMode, clamp_scale, fit_scale, next_zoom, rotated_size
 from bene.presentation.render_cache import RenderCache
 from bene.presentation.viewer.pdf_canvas import PdfCanvas, rendered_page_to_image
+from bene.presentation.widgets.thumbnail_panel import ThumbnailPanel
 from bene.presentation.workers.render_worker import PageRenderer, RenderScheduler
+from bene.presentation.workers.thumbnail_worker import ThumbnailLoader, ThumbnailRequest
 
 logger = logging.getLogger(__name__)
 
 MAX_PASSWORD_ATTEMPTS: Final[int] = 3
 RESIZE_DEBOUNCE_MS: Final[int] = 150
+THUMBNAIL_SCALE: Final[float] = 0.2
 
 PAGE_KIND_LABELS: Final[dict[PageKind, str]] = {
     PageKind.TEXT: "texto seleccionable",
@@ -70,6 +74,9 @@ class MainWindow(QMainWindow):
         self._scheduler: RenderScheduler | None = None
         self._page_infos: dict[int, PageInfo] = {}
         self._cache = RenderCache()
+        self._thumbnail_loader = ThumbnailLoader(self)
+        self._thumbnail_loader.ready.connect(self._on_thumbnail_ready)
+        self._thumbnail_loader.failed.connect(self._on_thumbnail_failed)
 
         self._page_index = 0
         self._zoom = 1.0
@@ -219,6 +226,17 @@ class MainWindow(QMainWindow):
         self._scroll.setStyleSheet("QScrollArea { background: #1b1e21; border: none; }")
         self.setCentralWidget(self._scroll)
 
+        self._thumbnails = ThumbnailPanel(self)
+        self._thumbnails.setMinimumWidth(150)
+        self._thumbnails.page_activated.connect(self.go_to_page)
+        thumbnails_dock = QDockWidget("Páginas", self)
+        thumbnails_dock.setObjectName("dock_miniaturas")
+        thumbnails_dock.setWidget(self._thumbnails)
+        thumbnails_dock.setAllowedAreas(
+            Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea
+        )
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, thumbnails_dock)
+
         self._open_action = QAction("Abrir…", self)
         self._open_action.setShortcut(QKeySequence.StandardKey.Open)
         self._open_action.setStatusTip("Abrir un documento PDF")
@@ -357,6 +375,7 @@ class MainWindow(QMainWindow):
             self._status_activity.setText("")
             self._status_zoom.setText("100 %")
             self._canvas.set_message("Abre un PDF para empezar")
+            self._thumbnails.set_page_count(0)
             return
 
         info = self._document_info
@@ -373,6 +392,7 @@ class MainWindow(QMainWindow):
         self._page_spin.setValue(self._page_index + 1)
         self._page_spin.blockSignals(False)
         self._page_total.setText(f"/ {info.page_count}")
+        self._thumbnails.set_current_page(self._page_index)
 
         self._update_page_status()
         self._status_zoom.setText(f"{self._effective_scale() * 100:.0f} %")
@@ -415,12 +435,29 @@ class MainWindow(QMainWindow):
         self._scheduler.failed.connect(self._on_render_failed)
 
         logger.info("Documento abierto: %s (%d páginas)", path, document.info.page_count)
+        self._thumbnails.set_page_count(document.info.page_count)
         self._update_ui()
         self._status_activity.setText("Preparando…")
+        self._start_thumbnails(document)
         # El primer render espera a que el layout tenga el tamaño definitivo.
         QTimer.singleShot(0, self._request_render)
 
+    def _start_thumbnails(self, document: OpenedDocument) -> None:
+        requests = [
+            ThumbnailRequest(index, THUMBNAIL_SCALE) for index in range(document.info.page_count)
+        ]
+        self._thumbnail_loader.start(self._renderer_factory(document), requests)
+
+    def _on_thumbnail_ready(self, page_index: int, render: object) -> None:
+        if not isinstance(render, RenderedPage):
+            return
+        self._thumbnails.set_thumbnail(page_index, rendered_page_to_image(render))
+
+    def _on_thumbnail_failed(self, page_index: int, error: object) -> None:
+        logger.warning("Miniatura no disponible para la página %d: %s", page_index + 1, error)
+
     def _teardown_document(self) -> None:
+        self._thumbnail_loader.shutdown()
         if self._scheduler is not None:
             self._scheduler.shutdown()
             self._scheduler.deleteLater()
@@ -436,6 +473,7 @@ class MainWindow(QMainWindow):
         self._zoom = 1.0
         self._fit_mode = FitMode.NONE
         self._canvas.set_image(None)
+        self._thumbnails.set_page_count(0)
 
     def _page_info(self, page_index: int) -> PageInfo:
         cached = self._page_infos.get(page_index)
