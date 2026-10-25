@@ -1,6 +1,6 @@
 # Especificación técnica: aplicación de escritorio para editar PDF
 
-- **Nombre provisional:** EDITOR PDF BINNGULA
+- **Nombre provisional:** EDITOR PDF BENE
 - **Tipo:** aplicación de escritorio multiplataforma
 - **Lenguaje principal:** Python 3.12+
 - **Estado del documento:** propuesta inicial de requisitos y arquitectura
