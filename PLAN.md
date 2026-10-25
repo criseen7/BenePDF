@@ -133,10 +133,10 @@ Además del smoke test automático, se ejecutó la aplicación real en modo offs
 
 ### Paso 2 — Coordenadas y lienzo
 
-- [ ] `CoordinateMapper` para pantalla ↔ puntos PDF con zoom y rotación de vista
-- [ ] Selección rectangular de región con conversión correcta a puntos PDF
-- [ ] Dibujo de objetos, selección, asas de redimensionado y arrastre
-- [ ] Pruebas unitarias de las cuatro rotaciones y de la ida y vuelta
+- [x] `CoordinateMapper` para pantalla ↔ puntos PDF con zoom y rotación de vista
+- [x] Selección rectangular de región con conversión correcta a puntos PDF
+- [x] Dibujo de objetos, selección, asas de redimensionado y arrastre
+- [x] Pruebas unitarias de las cuatro rotaciones y de la ida y vuelta
 
 ### Paso 3 — Texto e imágenes
 
@@ -245,6 +245,7 @@ EditorPDF-Local/
 | 2026-10-24 | Pasos 2 y 3 completados: adaptador PyMuPDF (apertura, cifrado, clasificación, render con cerrojo) y casos de uso de apertura y render. 71 pruebas nuevas, 121 en total. Benchmark de 100 páginas: primera página visible en 0,01 s. |
 | 2026-10-24 | Pasos 4, 5 y 6 completados: ventana PySide6, visor, planificador de render con descarte de resultados obsoletos, caché LRU, zoom/ajuste/rotación, apertura por diálogo y arrastre, contraseña, errores en diálogos, bootstrap, registro rotativo y rutas sin Qt. 104 pruebas nuevas (44 de interfaz), 225 en total. Smoke test real offscreen con PyMuPDF y navegación/zoom/rotación. |
 | 2026-10-25 | Iteración 2 iniciada. Paso 1 completado: modelos de edición, comandos inmutables, aplicación de comandos, historial y sesión con deshacer/rehacer. 31 pruebas nuevas. |
+| 2026-10-25 | Paso 2 completado: `CoordinateMapper` con zoom y las cuatro rotaciones, selección de región, dibujo de texto e imágenes, selección y transformación por arrastre en el lienzo. 47 pruebas nuevas, 303 en total. |
 
 ## 10. Notas de entorno
 
