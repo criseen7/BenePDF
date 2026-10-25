@@ -64,6 +64,7 @@ class FakePdfEngine:
         self._pages = tuple(pages)
         self._title = title
         self.opened: list[tuple[Path, str | None]] = []
+        self.documents: list[FakeDocument] = []
 
     def open_document(self, path: Path, *, password: str | None = None) -> FakeDocument:
         self.opened.append((path, password))
@@ -73,7 +74,9 @@ class FakePdfEngine:
             file_size_bytes=1024,
             metadata={"title": self._title},
         )
-        return FakeDocument(info, self._pages)
+        document = FakeDocument(info, self._pages)
+        self.documents.append(document)
+        return document
 
 
 def make_pages(count: int = 3, *, kind: PageKind = PageKind.TEXT) -> tuple[PageInfo, ...]:

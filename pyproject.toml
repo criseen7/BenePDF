@@ -65,7 +65,7 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["pdf_studio"]
+source = ["bene"]
 branch = true
 
 [tool.coverage.report]

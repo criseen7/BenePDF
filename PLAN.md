@@ -1,6 +1,6 @@
 # PLAN — Bene PDF
 
-- **Estado:** iteración 1 en curso
+- **Estado:** iteración 1 implementada y verificada en modo offscreen
 - **Última actualización:** 2026-10-24
 - **Especificación de referencia:** [docs/requirements.md](docs/requirements.md)
 
@@ -84,25 +84,39 @@ Resultado medido con `scripts/benchmark_open.py` (100 páginas de texto, 0,58 MB
 
 ### Paso 4 — Presentación
 
-- [ ] `main_window.py`: barra superior, visor y barra de estado
-- [ ] `viewer/pdf_canvas.py`: widget que pinta el `QImage`
-- [ ] Render en `QThreadPool` con descarte de resultados obsoletos
-- [ ] Caché LRU acotada por número de páginas y memoria
-- [ ] Abrir desde diálogo y arrastrando archivos; contraseña para PDF cifrados
+- [x] `main_window.py`: barra superior, visor y barra de estado
+- [x] `viewer/pdf_canvas.py`: widget que pinta el `QImage`
+- [x] Render en `QThreadPool` con descarte de resultados obsoletos
+- [x] Caché LRU acotada por número de páginas y memoria
+- [x] Abrir desde diálogo y arrastrando archivos; contraseña para PDF cifrados
+
+La ventana abre en **ajustar página**, con barra de herramientas, menús Archivo/Ver/Ayuda y barra de estado con título, página, clasificación, dimensiones y zoom. Al redimensionar se recalcula el ajuste con un retardo de 150 ms para no lanzar renders intermedios.
+
+El planificador de render mantiene **un render en curso y como máximo uno pendiente**: cada petición lleva un token y solo se entrega el resultado de la última. Los renders de páginas que ya no están visibles se guardan igualmente en la caché, de modo que volver atrás es inmediato. La caché LRU se limita a 24 entradas y 128 MB, conservando siempre la más reciente.
+
+La contraseña se pide en un diálogo modal y se mantiene solo en memoria; se permiten tres intentos antes de mostrar el error. Los PDF se pueden abrir con el diálogo, por línea de comandos o arrastrándolos a la ventana. Los errores previstos se muestran con su mensaje en español y los inesperados remiten al registro técnico.
 
 ### Paso 5 — Infraestructura transversal
 
-- [ ] `bootstrap.py` como composition root
-- [ ] Logging rotativo en `%LOCALAPPDATA%\EditorPDF\logs`, sin texto del documento
-- [ ] Rutas de configuración vía `QStandardPaths`
+- [x] `bootstrap.py` como composition root
+- [x] Logging rotativo en `%LOCALAPPDATA%\bene-pdf\logs`, sin texto del documento
+- [x] Rutas de configuración con la biblioteca estándar en lugar de `QStandardPaths`
+
+`bootstrap.create_application()` construye el motor, los casos de uso y la ventana en un solo lugar; `main.py` solo interpreta argumentos, crea la `QApplication` y ejecuta el bucle de eventos.
+
+El registro usa `RotatingFileHandler` (2 MB por archivo, 3 copias) y nunca recibe el contenido del documento. Las rutas se calculan sin Qt: `LOCALAPPDATA` en Windows y `XDG_DATA_HOME`/`XDG_STATE_HOME` en Linux. Así el arranque, el registro y sus pruebas funcionan sin crear una aplicación gráfica.
 
 ### Paso 6 — Pruebas
 
-- [ ] Unitarias con `FakePdfEngine`: validaciones y casos de uso
-- [ ] Integración contra PDFs sintéticos generados en el test
-- [ ] Smoke test de UI con `QT_QPA_PLATFORM=offscreen`
-- [ ] Test de frontera: `pymupdf` solo en `infrastructure/pdf`; `PySide6` solo en `presentation` y `main.py`
-- [ ] Benchmark manual con PDF de 100 páginas (< 3 s la primera página)
+- [x] Unitarias con `FakePdfEngine`: validaciones y casos de uso
+- [x] Integración contra PDFs sintéticos generados en el test
+- [x] Smoke test de UI con `QT_QPA_PLATFORM=offscreen`
+- [x] Test de frontera: `pymupdf` solo en `infrastructure/pdf`; `PySide6` solo en `presentation` y `main.py`
+- [x] Benchmark manual con PDF de 100 páginas (< 3 s la primera página)
+
+Resultado: **225 pruebas en verde** (44 de interfaz), `ruff` y `mypy` sin errores en 51 archivos. La prueba de frontera analiza los imports con `ast` y comprueba además que dominio y aplicación no dependan de capas exteriores.
+
+Además del smoke test automático, se ejecutó la aplicación real en modo offscreen con PyMuPDF: abrir un PDF de 5 páginas, navegar cinco páginas, cambiar a zoom 200 %, ajustar al ancho y rotar la vista, con renders agrupados y sin bloqueos. El registro se creó y no contenía el texto del documento.
 
 ## 3. Estructura objetivo
 
@@ -172,10 +186,13 @@ EditorPDF-Local/
 | 2026-10-24 | Análisis de requisitos y plan acordado. Paso 0 ejecutado: proyecto, herramientas, docs y entorno verificado. |
 | 2026-10-24 | Nombre provisional actualizado a **Bene PDF**: paquete `bene`, comando `bene` y referencias del proyecto. Paso 1 completado: modelos de dominio, errores tipados y puerto `PdfEngine` con su DTO. 50 pruebas en verde. |
 | 2026-10-24 | Pasos 2 y 3 completados: adaptador PyMuPDF (apertura, cifrado, clasificación, render con cerrojo) y casos de uso de apertura y render. 71 pruebas nuevas, 121 en total. Benchmark de 100 páginas: primera página visible en 0,01 s. |
+| 2026-10-24 | Pasos 4, 5 y 6 completados: ventana PySide6, visor, planificador de render con descarte de resultados obsoletos, caché LRU, zoom/ajuste/rotación, apertura por diálogo y arrastre, contraseña, errores en diálogos, bootstrap, registro rotativo y rutas sin Qt. 104 pruebas nuevas (44 de interfaz), 225 en total. Smoke test real offscreen con PyMuPDF y navegación/zoom/rotación. |
 
 ## 8. Notas de entorno
 
 - El paquete y el comando se llaman `bene`. El bloque de estructura de `docs/requirements.md` todavía usa `pdf-studio-local`/`pdf_studio` porque es el documento original del usuario; este plan y el código usan `bene`.
+- **Desviación del plan original:** las rutas se calculan con la biblioteca estándar (`LOCALAPPDATA` en Windows; `XDG_DATA_HOME`/`XDG_STATE_HOME` en Linux) y no con `QStandardPaths`. Motivo: mantener `config.py`, el registro y `bootstrap.py` libres de Qt, de modo que se puedan probar sin `QApplication` y que el arranque no dependa de la inicialización gráfica. En Windows la ubicación es la misma que daría Qt: `%LOCALAPPDATA%\bene-pdf`.
+- El registro técnico está en `%LOCALAPPDATA%\bene-pdf\logs\bene.log` (Windows) o `$XDG_STATE_HOME/bene-pdf/logs/bene.log` (Linux). Rota a 2 MB y conserva 3 copias.
 - El repositorio usa identidad git local `Crise <crise@localhost>`; cámbiala con `git config user.name` / `git config user.email` si vas a publicarlo.
 - Windows: `py -3.12 -m venv .venv`, luego `python -m pip install -e ".[dev]"`.
 - Las comprobaciones se lanzan desde WSL llamando al Python de Windows: `.venv/Scripts/python.exe`.

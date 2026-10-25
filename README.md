@@ -32,6 +32,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 ```powershell
 bene                    # abre la aplicación
+bene documento.pdf      # abre un PDF al iniciar
 pytest                  # pruebas
 ruff check .            # lint
 ruff format .           # formato
@@ -39,6 +40,8 @@ mypy                    # tipado estático
 python scripts/verify_env.py   # comprueba Python, PyMuPDF y Qt
 python scripts/benchmark_open.py  # mide el criterio de rendimiento RNF-001
 ```
+
+El registro técnico se escribe en `%LOCALAPPDATA%\bene-pdf\logs\bene.log`, rota a 2 MB y nunca incluye el texto del documento.
 
 Para ejecutar la interfaz en un entorno sin pantalla (CI):
 
