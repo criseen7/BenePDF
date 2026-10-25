@@ -1,4 +1,4 @@
-# PLAN — Editor PDF (local)
+# PLAN — Bene
 
 - **Estado:** iteración 1 en curso
 - **Última actualización:** 2026-10-24
@@ -8,6 +8,7 @@
 
 | Tema | Decisión | Motivo |
 |---|---|---|
+| Nombre | **Bene** (provisional) | Elegido por el usuario; paquete Python `bene`, comando `bene` |
 | Distribución | Uso personal, sin distribución | Permite usar PyMuPDF bajo AGPL sin obligaciones de distribución |
 | Lenguaje | Python 3.12 (Windows nativo) | Es la versión instalada en la máquina objetivo y la que soportan todas las ruedas |
 | Interfaz | PySide6 6.12, textos en español | Qt cubre visor, diálogos y tareas en segundo plano; licencia LGPL |
@@ -25,7 +26,7 @@ Las decisiones con consecuencias arquitectónicas se documentan en `docs/decisio
 ### Paso 0 — Base del proyecto
 
 - [x] Repositorio git inicializado con `.gitignore` y `.gitattributes`
-- [x] `pyproject.toml` con dependencias fijadas, extras `dev`, entry point `pdf-studio`
+- [x] `pyproject.toml` con dependencias fijadas, extras `dev`, entry point `bene`
 - [x] Ruff (lint y formato) y mypy configurados
 - [x] pytest + pytest-qt configurados
 - [x] `README.md` con requisitos e instrucciones
@@ -37,9 +38,15 @@ Verificación reproducible: `scripts/verify_env.py` comprueba la versión de Pyt
 
 ### Paso 1 — Dominio y puerto
 
-- [ ] `domain/models.py`: `PdfDocumentInfo`, `PageInfo`, `PdfRect`, `PageKind`
-- [ ] `domain/errors.py`: errores de apertura, cifrado, render y rango de página
-- [ ] `application/ports/pdf_engine.py`: `Protocol` + DTO `RenderedPage`, sin tipos de PyMuPDF
+- [x] `domain/models.py`: `DocumentInfo`, `PageInfo`, `PdfRect`, `PageKind`
+- [x] `domain/errors.py`: errores de apertura, cifrado, render y rango de página
+- [x] `application/ports/pdf_engine.py`: `Protocol` + DTO `RenderedPage`, sin tipos de PyMuPDF
+
+Los modelos validan sus invariantes al construirse (`PdfRect` rechaza coordenadas
+invertidas o no finitas; `PageInfo` valida rotación y recuentos). `PageKind`
+distingue vacía, texto, gráfico y escaneada. El puerto separa la fábrica
+(`PdfEngine.open_document`) de la sesión (`OpenedDocument`), que declara
+explícitamente quién cierra el documento.
 
 ### Paso 2 — Adaptador PyMuPDF
 
@@ -87,7 +94,7 @@ EditorPDF-Local/
 │   └── decisions/
 │       ├── ADR-001-motor-pdf.md
 │       └── ADR-002-modelo-de-edicion.md
-├── src/pdf_studio/
+├── src/bene/
 │   ├── main.py
 │   ├── bootstrap.py
 │   ├── config.py
@@ -141,9 +148,11 @@ EditorPDF-Local/
 | Fecha | Avance |
 |---|---|
 | 2026-10-24 | Análisis de requisitos y plan acordado. Paso 0 ejecutado: proyecto, herramientas, docs y entorno verificado. |
+| 2026-10-24 | Nombre provisional actualizado a **Bene**: paquete `bene`, comando `bene` y referencias del proyecto. Paso 1 completado: modelos de dominio, errores tipados y puerto `PdfEngine` con su DTO. 50 pruebas en verde. |
 
 ## 8. Notas de entorno
 
+- El paquete y el comando se llaman `bene`. El bloque de estructura de `docs/requirements.md` todavía usa `pdf-studio-local`/`pdf_studio` porque es el documento original del usuario; este plan y el código usan `bene`.
 - El repositorio usa identidad git local `Crise <crise@localhost>`; cámbiala con `git config user.name` / `git config user.email` si vas a publicarlo.
 - Windows: `py -3.12 -m venv .venv`, luego `python -m pip install -e ".[dev]"`.
 - Las comprobaciones se lanzan desde WSL llamando al Python de Windows: `.venv/Scripts/python.exe`.

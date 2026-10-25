@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import pdf_studio
+import bene
 
 
 def test_version_instalada() -> None:
-    assert pdf_studio.__version__ == "0.1.0"
+    assert bene.__version__ == "0.1.0"

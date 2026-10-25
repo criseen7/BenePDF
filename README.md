@@ -1,4 +1,4 @@
-# Editor PDF (local)
+# Bene
 
 Aplicación de escritorio para visualizar, organizar y editar documentos PDF sin subir nada a servicios externos.
 
@@ -31,7 +31,7 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ## Comandos
 
 ```powershell
-pdf-studio              # abre la aplicación
+bene                    # abre la aplicación
 pytest                  # pruebas
 ruff check .            # lint
 ruff format .           # formato
@@ -49,7 +49,7 @@ pytest -m ui
 ## Estructura
 
 ```text
-src/pdf_studio/
+src/bene/
 ├── main.py           # punto de entrada
 ├── bootstrap.py      # composición de dependencias
 ├── domain/           # modelos, reglas y errores
