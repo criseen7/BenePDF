@@ -28,6 +28,80 @@ Si PowerShell bloquea la activación del entorno:
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ```
 
+## Guía de uso
+
+### Abrir un PDF
+
+1. Activa el entorno e inicia la aplicación con `bene`.
+2. Pulsa **Abrir…** en la barra de herramientas o usa `Ctrl+O`.
+3. También puedes arrastrar un archivo PDF desde el Explorador y soltarlo sobre la ventana.
+4. Desde la terminal puedes abrir un documento directamente:
+
+   ```powershell
+   bene "C:\ruta\al\documento.pdf"
+   ```
+
+Al abrirlo, Bene PDF muestra la primera página ajustada a la ventana. Si el PDF está cifrado, pedirá la contraseña; se permiten hasta tres intentos y la contraseña solo se mantiene en memoria.
+
+### Navegar por el documento
+
+- Escribe el número de página en el selector de la barra superior y pulsa `Enter`.
+- Usa los botones **◀** y **▶**, o las teclas `PgUp` y `PgDn`, para ir a la página anterior o siguiente.
+- La barra de estado indica la página actual, el total, la clasificación orientativa de la página (texto, imagen escaneada, contenido gráfico o página vacía), sus dimensiones en puntos y el zoom aplicado.
+
+Los renders se hacen en segundo plano: mientras se prepara una página verás **Renderizando…** y, al terminar, **Listo**. Las páginas ya visitadas se conservan en memoria para que volver atrás sea inmediato.
+
+### Zoom y ajuste
+
+- **Acercar** / **Alejar**: botones de la barra o `Ctrl++` / `Ctrl+-`.
+- **100 %**: `Ctrl+0`.
+- **Ajustar ancho**: `Ctrl+1`.
+- **Ajustar página**: `Ctrl+2`.
+- El zoom manual va del 10 % al 800 %.
+- Al redimensionar la ventana, los modos de ajuste recalculan la escala automáticamente.
+
+### Rotar la vista
+
+Pulsa **Rotar vista 90°** o `Ctrl+R` para girar la página en pantalla 90° en sentido horario. Puedes repetirlo para llegar a 180° y 270°. La rotación es solo de visualización: **no modifica el PDF** y se restablece al abrir otro documento.
+
+### Cerrar y salir
+
+- **Cerrar documento** (`Ctrl+W`) cierra el PDF actual y deja la aplicación abierta.
+- **Salir** (`Ctrl+Q`, o Archivo → Salir) cierra la aplicación.
+- Abrir otro PDF cierra automáticamente el documento anterior.
+
+### Atajos de teclado
+
+| Acción | Atajo |
+|---|---|
+| Abrir PDF | `Ctrl+O` |
+| Página anterior | `PgUp` |
+| Página siguiente | `PgDn` |
+| Acercar | `Ctrl++` |
+| Alejar | `Ctrl+-` |
+| Zoom 100 % | `Ctrl+0` |
+| Ajustar ancho | `Ctrl+1` |
+| Ajustar página | `Ctrl+2` |
+| Rotar vista 90° | `Ctrl+R` |
+| Cerrar documento | `Ctrl+W` |
+| Salir | `Ctrl+Q` |
+
+### Errores y registro
+
+Si el archivo no existe, está dañado, no es un PDF o no se puede leer, la aplicación muestra un diálogo con el motivo. Los detalles técnicos se escriben en el registro:
+
+- Windows: `%LOCALAPPDATA%\bene-pdf\logs\bene.log`
+- Linux: `$XDG_STATE_HOME/bene-pdf/logs/bene.log` o `~/.local/state/bene-pdf/logs/bene.log`
+
+El registro rota a 2 MB, conserva tres copias y nunca contiene el texto del documento.
+
+### Limitaciones de esta iteración
+
+- Todavía no se pueden editar ni guardar cambios: esta iteración es de visualización y el PDF original nunca se modifica.
+- No hay miniaturas, búsqueda, OCR, impresión ni exportación.
+- La rotación de vista no se guarda en el archivo.
+- Si una página concreta no se puede renderizar, se muestra un aviso y el detalle queda en el registro.
+
 ## Comandos
 
 ```powershell
@@ -40,8 +114,6 @@ mypy                    # tipado estático
 python scripts/verify_env.py   # comprueba Python, PyMuPDF y Qt
 python scripts/benchmark_open.py  # mide el criterio de rendimiento RNF-001
 ```
-
-El registro técnico se escribe en `%LOCALAPPDATA%\bene-pdf\logs\bene.log`, rota a 2 MB y nunca incluye el texto del documento.
 
 Para ejecutar la interfaz en un entorno sin pantalla (CI):
 
