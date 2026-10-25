@@ -26,6 +26,7 @@ Se eligió 2.0 y no 1.28.x porque 2.0 corrige un fallo de `apply_redactions()` i
 - El proyecto queda bajo las condiciones **AGPL-3.0**: es válido para uso personal o para publicar el código bajo AGPL, pero no para distribuir un binario cerrado. Si se decide distribuir, este ADR debe revisarse antes de publicar.
 - Solo `infrastructure/pdf/pymupdf_engine.py` importa `pymupdf`. El resto del código depende del puerto, de modo que sustituir el motor no afecta a la interfaz ni al dominio.
 - El módulo correcto es `pymupdf`; `import fitz` sigue existiendo pero emite `FutureWarning`.
+- PyMuPDF 2.0 arrastra dependencias que el MVP no usa (`pymupdf-layout`, `pymupdf4llm`, `onnxruntime`, `numpy`). Medido en Windows con el entorno completo: 992 MB de `.venv`, de los cuales 105 MB son PyMuPDF y 99 MB sus extras. No se pueden excluir, pero solo afectan al tamaño de desarrollo: PyInstaller empaquetará lo que se importe.
 - Al empaquetar con PyInstaller habrá que incluir los binarios de MuPDF (iteración 4).
 - No se ejecuta JavaScript ni contenido activo del PDF: PyMuPDF no lo hace por defecto.
 

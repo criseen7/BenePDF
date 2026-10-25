@@ -32,6 +32,8 @@ where = ["src"]
 line-length = 100
 target-version = "py312"
 src = ["src", "tests"]
+# docs/ contiene ejemplos en bloques de código; no es código del proyecto.
+extend-exclude = ["docs"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM", "C4", "PTH", "RUF"]
@@ -52,11 +54,6 @@ no_implicit_optional = true
 check_untyped_defs = true
 strict_equality = true
 pretty = true
-
-[[tool.mypy.overrides]]
-module = "pdf_studio.presentation.*"
-disallow_untyped_defs = false
-disallow_incomplete_defs = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

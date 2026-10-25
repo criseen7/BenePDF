@@ -36,6 +36,7 @@ pytest                  # pruebas
 ruff check .            # lint
 ruff format .           # formato
 mypy                    # tipado estático
+python scripts/verify_env.py   # comprueba Python, PyMuPDF y Qt
 ```
 
 Para ejecutar la interfaz en un entorno sin pantalla (CI):

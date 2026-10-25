@@ -33,6 +33,8 @@ Las decisiones con consecuencias arquitectónicas se documentan en `docs/decisio
 - [x] `ADR-001` (motor PDF) y `ADR-002` (modelo de edición)
 - [x] Entorno virtual en Windows con dependencias instaladas y verificadas
 
+Verificación reproducible: `scripts/verify_env.py` comprueba la versión de Python, que PyMuPDF elimina realmente el texto redactado y que Qt dibuja en modo offscreen. Resultado en esta máquina: Python 3.12.1, pymupdf 2.0 y Qt 6.12.0, todo correcto.
+
 ### Paso 1 — Dominio y puerto
 
 - [ ] `domain/models.py`: `PdfDocumentInfo`, `PageInfo`, `PdfRect`, `PageKind`
@@ -139,3 +141,10 @@ EditorPDF-Local/
 | Fecha | Avance |
 |---|---|
 | 2026-10-24 | Análisis de requisitos y plan acordado. Paso 0 ejecutado: proyecto, herramientas, docs y entorno verificado. |
+
+## 8. Notas de entorno
+
+- El repositorio usa identidad git local `Crise <crise@localhost>`; cámbiala con `git config user.name` / `git config user.email` si vas a publicarlo.
+- Windows: `py -3.12 -m venv .venv`, luego `python -m pip install -e ".[dev]"`.
+- Las comprobaciones se lanzan desde WSL llamando al Python de Windows: `.venv/Scripts/python.exe`.
+- Tamaño del entorno completo: 992 MB (PySide6 653 MB, PyMuPDF 105 MB y sus extras 99 MB). El `.exe` final será mucho menor.
