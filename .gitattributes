@@ -1,0 +1,14 @@
+# Normalizar finales de línea en el repositorio
+* text=auto eol=lf
+
+# Scripts de Windows conservan CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binarios
+*.pdf -text
+*.png -text
+*.jpg -text
+*.jpeg -text
+*.ico -text
