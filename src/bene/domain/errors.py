@@ -101,6 +101,24 @@ class PageOutOfRangeError(BeneError, IndexError):
         self.page_count = page_count
 
 
+class EditError(BeneError):
+    """Error en una operación de edición de la sesión."""
+
+
+class EditObjectNotFoundError(EditError):
+    """El objeto que se quiere transformar o eliminar no existe."""
+
+    object_id: str
+
+    def __init__(self, object_id: str) -> None:
+        super().__init__(f"No existe el objeto de edición {object_id!r}")
+        self.object_id = object_id
+
+
+class InvalidEditOperationError(EditError, ValueError):
+    """El comando no se puede aplicar al estado actual de la edición."""
+
+
 class RenderError(BeneError):
     """El motor no pudo renderizar una página."""
 

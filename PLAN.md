@@ -1,7 +1,7 @@
 # PLAN — Bene PDF
 
-- **Estado:** iteración 1 implementada y verificada en modo offscreen
-- **Última actualización:** 2026-10-24
+- **Estado:** iteración 2 en curso (modelo de edición e historial completados)
+- **Última actualización:** 2026-10-25
 - **Especificación de referencia:** [docs/requirements.md](docs/requirements.md)
 
 ## 1. Decisiones adoptadas
@@ -118,7 +118,55 @@ Resultado: **225 pruebas en verde** (44 de interfaz), `ruff` y `mypy` sin errore
 
 Además del smoke test automático, se ejecutó la aplicación real en modo offscreen con PyMuPDF: abrir un PDF de 5 páginas, navegar cinco páginas, cambiar a zoom 200 %, ajustar al ancho y rotar la vista, con renders agrupados y sin bloqueos. El registro se creó y no contenía el texto del documento.
 
-## 3. Estructura objetivo
+## 3. Iteración 2 — edición en memoria
+
+**Objetivo verificable:** seleccionar regiones, añadir texto e imágenes, moverlas y redimensionarlas, deshacer y rehacer, con miniaturas de página y sin modificar el PDF original.
+
+### Paso 1 — Modelo de edición e historial
+
+- [x] `domain/editing.py`: `TextStyle`, `TextObject`, `ImageObject` y comandos inmutables
+- [x] `apply_command`: estado nuevo a partir del anterior, sin mutaciones
+- [x] `EditHistory`: índice de comandos activos, deshacer/rehacer y descarte del futuro
+- [x] `EditSession`: altas, transformaciones, eliminación, consultas y estado sucio
+- [x] Errores tipados de objeto inexistente y operación inválida
+- [x] Pruebas unitarias de modelos, comandos, historial y sesión
+
+### Paso 2 — Coordenadas y lienzo
+
+- [ ] `CoordinateMapper` para pantalla ↔ puntos PDF con zoom y rotación de vista
+- [ ] Selección rectangular de región con conversión correcta a puntos PDF
+- [ ] Dibujo de objetos, selección, asas de redimensionado y arrastre
+- [ ] Pruebas unitarias de las cuatro rotaciones y de la ida y vuelta
+
+### Paso 3 — Texto e imágenes
+
+- [ ] Diálogo de texto: contenido, fuente, tamaño, color y alineación
+- [ ] Colocación de texto en una región o con un clic
+- [ ] Inserción de PNG/JPEG desde archivo, con límite de tamaño
+- [ ] Vista previa de texto e imágenes con `QPainter`
+- [ ] Eliminación de objetos añadidos
+
+### Paso 4 — Historial y propiedades en la interfaz
+
+- [ ] Acciones Deshacer/Rehacer con atajos y estado habilitado
+- [ ] Panel de propiedades con posición y tamaño numéricos
+- [ ] Indicador de cambios sin exportar y aviso al cerrar o abrir otro documento
+- [ ] Sincronización entre selección del lienzo y panel de propiedades
+
+### Paso 5 — Miniaturas
+
+- [ ] Carga asíncrona y secuencial de miniaturas con tamaño acotado
+- [ ] Panel lateral con página actual resaltada y navegación por clic
+- [ ] Cancelación y liberación al cerrar o cambiar de documento
+
+### Paso 6 — Verificación
+
+- [ ] Pruebas unitarias, de integración y de interfaz en verde
+- [ ] `ruff` y `mypy` sin errores
+- [ ] Smoke real offscreen con PyMuPDF: miniaturas, texto, imagen y deshacer
+- [ ] README y bitácora actualizados
+
+## 4. Estructura objetivo
 
 ```text
 EditorPDF-Local/
@@ -152,7 +200,7 @@ EditorPDF-Local/
     └── fixtures/
 ```
 
-## 4. Criterios de verificación de la iteración 1
+## 5. Criterios de verificación de la iteración 1
 
 1. `pytest` en verde en Windows (unitarias, integración y UI offscreen).
 2. `ruff check` y `ruff format --check` sin errores.
@@ -161,7 +209,16 @@ EditorPDF-Local/
 5. PDF corrupto, cifrado y escaneado: mensajes claros y sin cierre inesperado.
 6. El log existe, rota y no contiene texto del documento.
 
-## 5. Riesgos abiertos
+## 6. Criterios de verificación de la iteración 2
+
+1. Las cuatro rotaciones de vista convierten pantalla ↔ PDF sin desfases y la ida y vuelta conserva el punto.
+2. Se puede añadir, mover, redimensionar y eliminar texto e imágenes con la vista previa actualizada.
+3. Deshacer y rehacer reconstruyen exactamente el estado anterior, incluidos los objetos eliminados.
+4. Las miniaturas se cargan sin bloquear la interfaz y navegan a la página correcta.
+5. El PDF original no se modifica y no se escribe ningún archivo.
+6. `pytest`, `ruff` y `mypy` en verde y smoke real offscreen correcto.
+
+## 7. Riesgos abiertos
 
 | Riesgo | Impacto | Mitigación |
 |---|---|---|
@@ -170,7 +227,7 @@ EditorPDF-Local/
 | Redacción puede eliminar objetos solapados | Alto | Vista previa con la zona marcada, confirmación explícita y pruebas con objetos cercanos |
 | Rendimiento en PDF escaneados de gran tamaño | Medio | Render bajo demanda, caché acotada y tareas en segundo plano |
 
-## 6. Backlog posterior
+## 8. Backlog posterior
 
 | Iteración | Contenido |
 |---|---|
@@ -179,7 +236,7 @@ EditorPDF-Local/
 | 4 | Mensajes de error, accesibilidad, PDFs rotados y grandes, empaquetado con PyInstaller |
 | 5 | OCR local opcional, búsqueda, operaciones de páginas |
 
-## 7. Bitácora
+## 9. Bitácora
 
 | Fecha | Avance |
 |---|---|
@@ -187,8 +244,9 @@ EditorPDF-Local/
 | 2026-10-24 | Nombre provisional actualizado a **Bene PDF**: paquete `bene`, comando `bene` y referencias del proyecto. Paso 1 completado: modelos de dominio, errores tipados y puerto `PdfEngine` con su DTO. 50 pruebas en verde. |
 | 2026-10-24 | Pasos 2 y 3 completados: adaptador PyMuPDF (apertura, cifrado, clasificación, render con cerrojo) y casos de uso de apertura y render. 71 pruebas nuevas, 121 en total. Benchmark de 100 páginas: primera página visible en 0,01 s. |
 | 2026-10-24 | Pasos 4, 5 y 6 completados: ventana PySide6, visor, planificador de render con descarte de resultados obsoletos, caché LRU, zoom/ajuste/rotación, apertura por diálogo y arrastre, contraseña, errores en diálogos, bootstrap, registro rotativo y rutas sin Qt. 104 pruebas nuevas (44 de interfaz), 225 en total. Smoke test real offscreen con PyMuPDF y navegación/zoom/rotación. |
+| 2026-10-25 | Iteración 2 iniciada. Paso 1 completado: modelos de edición, comandos inmutables, aplicación de comandos, historial y sesión con deshacer/rehacer. 31 pruebas nuevas. |
 
-## 8. Notas de entorno
+## 10. Notas de entorno
 
 - El paquete y el comando se llaman `bene`. El bloque de estructura de `docs/requirements.md` todavía usa `pdf-studio-local`/`pdf_studio` porque es el documento original del usuario; este plan y el código usan `bene`.
 - **Desviación del plan original:** las rutas se calculan con la biblioteca estándar (`LOCALAPPDATA` en Windows; `XDG_DATA_HOME`/`XDG_STATE_HOME` en Linux) y no con `QStandardPaths`. Motivo: mantener `config.py`, el registro y `bootstrap.py` libres de Qt, de modo que se puedan probar sin `QApplication` y que el arranque no dependa de la inicialización gráfica. En Windows la ubicación es la misma que daría Qt: `%LOCALAPPDATA%\bene-pdf`.
