@@ -10,6 +10,7 @@ from typing import Final
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import (
     QAction,
+    QActionGroup,
     QCloseEvent,
     QDragEnterEvent,
     QDropEvent,
@@ -17,6 +18,7 @@ from PySide6.QtGui import (
     QResizeEvent,
 )
 from PySide6.QtWidgets import (
+    QDialog,
     QDockWidget,
     QFileDialog,
     QInputDialog,
@@ -32,13 +34,19 @@ from PySide6.QtWidgets import (
 )
 
 from bene.application.ports.pdf_engine import OpenedDocument, RenderedPage
+from bene.application.use_cases.edit_session import EditSession
 from bene.application.use_cases.open_document import OpenDocument
 from bene.config import APP_NAME
+from bene.domain.editing import ImageObject, TextObject, TextStyle
 from bene.domain.errors import BeneError, EncryptedDocumentError
-from bene.domain.models import DocumentInfo, PageInfo, PageKind
+from bene.domain.models import DocumentInfo, PageInfo, PageKind, PdfRect
+from bene.presentation.dialogs.text_dialog import TextDialog
 from bene.presentation.fit import FitMode, clamp_scale, fit_scale, next_zoom, rotated_size
+from bene.presentation.images import ImageLoadError, LoadedImage, load_image
 from bene.presentation.render_cache import RenderCache
-from bene.presentation.viewer.pdf_canvas import PdfCanvas, rendered_page_to_image
+from bene.presentation.viewer.coordinates import CoordinateMapper
+from bene.presentation.viewer.pdf_canvas import CanvasTool, PdfCanvas, rendered_page_to_image
+from bene.presentation.widgets.properties_panel import ObjectPropertiesPanel
 from bene.presentation.widgets.thumbnail_panel import ThumbnailPanel
 from bene.presentation.workers.render_worker import PageRenderer, RenderScheduler
 from bene.presentation.workers.thumbnail_worker import ThumbnailLoader, ThumbnailRequest
@@ -48,6 +56,9 @@ logger = logging.getLogger(__name__)
 MAX_PASSWORD_ATTEMPTS: Final[int] = 3
 RESIZE_DEBOUNCE_MS: Final[int] = 150
 THUMBNAIL_SCALE: Final[float] = 0.2
+DEFAULT_TEXT_WIDTH: Final[float] = 180.0
+DEFAULT_TEXT_HEIGHT: Final[float] = 60.0
+DEFAULT_IMAGE_WIDTH: Final[float] = 180.0
 
 PAGE_KIND_LABELS: Final[dict[PageKind, str]] = {
     PageKind.TEXT: "texto seleccionable",
@@ -74,6 +85,10 @@ class MainWindow(QMainWindow):
         self._scheduler: RenderScheduler | None = None
         self._page_infos: dict[int, PageInfo] = {}
         self._cache = RenderCache()
+        self._edit_session: EditSession | None = None
+        self._selected_object_id: str | None = None
+        self._pending_text: tuple[str, TextStyle] | None = None
+        self._pending_image: LoadedImage | None = None
         self._thumbnail_loader = ThumbnailLoader(self)
         self._thumbnail_loader.ready.connect(self._on_thumbnail_ready)
         self._thumbnail_loader.failed.connect(self._on_thumbnail_failed)
@@ -128,6 +143,26 @@ class MainWindow(QMainWindow):
         """Estado del último render, visible en la barra de estado."""
         return self._status_activity.text()
 
+    @property
+    def edit_session(self) -> EditSession | None:
+        return self._edit_session
+
+    @property
+    def selected_object_id(self) -> str | None:
+        return self._selected_object_id
+
+    @property
+    def is_dirty(self) -> bool:
+        return self._edit_session is not None and self._edit_session.is_dirty
+
+    @property
+    def edit_status(self) -> str:
+        return self._status_edit.text()
+
+    @property
+    def properties_panel(self) -> ObjectPropertiesPanel:
+        return self._properties
+
     def open_path(self, path: str | Path) -> bool:
         """Abre un documento. Devuelve ``False`` y muestra el error si falla."""
         candidate = Path(path).expanduser()
@@ -162,6 +197,10 @@ class MainWindow(QMainWindow):
                 )
                 return False
 
+            if not self._confirm_discard_changes():
+                document.close()
+                return False
+
             self._install_document(document, candidate)
             return True
 
@@ -169,7 +208,13 @@ class MainWindow(QMainWindow):
         if self._document_info is None:
             return
         target = max(0, min(page_index, self._document_info.page_count - 1))
+        if target == self._page_index:
+            return
         self._page_index = target
+        self._selected_object_id = None
+        self._cancel_placement()
+        self._canvas.clear_region()
+        self._status_region.setText("")
         self._update_ui()
         self._request_render()
 
@@ -208,6 +253,8 @@ class MainWindow(QMainWindow):
         self._request_render()
 
     def close_document(self) -> None:
+        if not self._confirm_discard_changes():
+            return
         self._teardown_document()
         self._update_ui()
 
@@ -219,6 +266,10 @@ class MainWindow(QMainWindow):
         self.setAcceptDrops(True)
 
         self._canvas = PdfCanvas()
+        self._canvas.selection_changed.connect(self._on_selection_changed)
+        self._canvas.transform_requested.connect(self._on_transform_requested)
+        self._canvas.region_selected.connect(self._on_region_selected)
+        self._canvas.placement_requested.connect(self._on_placement_requested)
         self._scroll = QScrollArea(self)
         self._scroll.setWidget(self._canvas)
         self._scroll.setWidgetResizable(False)
@@ -236,6 +287,16 @@ class MainWindow(QMainWindow):
             Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea
         )
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, thumbnails_dock)
+
+        self._properties = ObjectPropertiesPanel(self)
+        self._properties.geometry_applied.connect(self._on_properties_applied)
+        properties_dock = QDockWidget("Propiedades", self)
+        properties_dock.setObjectName("dock_propiedades")
+        properties_dock.setWidget(self._properties)
+        properties_dock.setAllowedAreas(
+            Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea
+        )
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, properties_dock)
 
         self._open_action = QAction("Abrir…", self)
         self._open_action.setShortcut(QKeySequence.StandardKey.Open)
@@ -270,6 +331,49 @@ class MainWindow(QMainWindow):
         self._close_action.setShortcut(QKeySequence("Ctrl+W"))
         self._close_action.triggered.connect(self.close_document)
 
+        self._select_tool_action = QAction("Seleccionar", self)
+        self._select_tool_action.setObjectName("accion_seleccionar")
+        self._select_tool_action.setCheckable(True)
+        self._select_tool_action.setChecked(True)
+        self._select_tool_action.setShortcut(QKeySequence("Ctrl+Shift+V"))
+        self._select_tool_action.triggered.connect(lambda: self.set_canvas_tool(CanvasTool.SELECT))
+
+        self._region_tool_action = QAction("Seleccionar región", self)
+        self._region_tool_action.setObjectName("accion_region")
+        self._region_tool_action.setCheckable(True)
+        self._region_tool_action.setShortcut(QKeySequence("Ctrl+Shift+R"))
+        self._region_tool_action.triggered.connect(lambda: self.set_canvas_tool(CanvasTool.REGION))
+
+        self._tool_group = QActionGroup(self)
+        self._tool_group.setExclusive(True)
+        self._tool_group.addAction(self._select_tool_action)
+        self._tool_group.addAction(self._region_tool_action)
+
+        self._add_text_action = QAction("Añadir texto…", self)
+        self._add_text_action.setObjectName("accion_anadir_texto")
+        self._add_text_action.setShortcut(QKeySequence("Ctrl+T"))
+        self._add_text_action.triggered.connect(self._add_text)
+
+        self._add_image_action = QAction("Insertar imagen…", self)
+        self._add_image_action.setObjectName("accion_insertar_imagen")
+        self._add_image_action.setShortcut(QKeySequence("Ctrl+I"))
+        self._add_image_action.triggered.connect(self._add_image)
+
+        self._undo_action = QAction("Deshacer", self)
+        self._undo_action.setObjectName("accion_deshacer")
+        self._undo_action.setShortcut(QKeySequence.StandardKey.Undo)
+        self._undo_action.triggered.connect(self.undo)
+
+        self._redo_action = QAction("Rehacer", self)
+        self._redo_action.setObjectName("accion_rehacer")
+        self._redo_action.setShortcut(QKeySequence.StandardKey.Redo)
+        self._redo_action.triggered.connect(self.redo)
+
+        self._delete_action = QAction("Eliminar objeto", self)
+        self._delete_action.setObjectName("accion_eliminar_objeto")
+        self._delete_action.setShortcut(QKeySequence(Qt.Key.Key_Delete))
+        self._delete_action.triggered.connect(self.delete_selected_object)
+
         self._quit_action = QAction("Salir", self)
         self._quit_action.setShortcut(QKeySequence.StandardKey.Quit)
         self._quit_action.triggered.connect(self.close)
@@ -285,6 +389,13 @@ class MainWindow(QMainWindow):
             self._fit_page_action,
             self._rotate_action,
             self._close_action,
+            self._select_tool_action,
+            self._region_tool_action,
+            self._add_text_action,
+            self._add_image_action,
+            self._undo_action,
+            self._redo_action,
+            self._delete_action,
         )
 
         self._page_spin = QSpinBox(self)
@@ -326,6 +437,14 @@ class MainWindow(QMainWindow):
         toolbar.addSeparator()
         toolbar.addAction(self._rotate_action)
         toolbar.addAction(self._close_action)
+        toolbar.addSeparator()
+        toolbar.addAction(self._select_tool_action)
+        toolbar.addAction(self._region_tool_action)
+        toolbar.addAction(self._add_text_action)
+        toolbar.addAction(self._add_image_action)
+        toolbar.addAction(self._undo_action)
+        toolbar.addAction(self._redo_action)
+        toolbar.addAction(self._delete_action)
         self.addToolBar(toolbar)
 
         file_menu = self.menuBar().addMenu("&Archivo")
@@ -333,6 +452,17 @@ class MainWindow(QMainWindow):
         file_menu.addAction(self._close_action)
         file_menu.addSeparator()
         file_menu.addAction(self._quit_action)
+
+        edit_menu = self.menuBar().addMenu("&Edición")
+        edit_menu.addAction(self._undo_action)
+        edit_menu.addAction(self._redo_action)
+        edit_menu.addSeparator()
+        edit_menu.addAction(self._select_tool_action)
+        edit_menu.addAction(self._region_tool_action)
+        edit_menu.addSeparator()
+        edit_menu.addAction(self._add_text_action)
+        edit_menu.addAction(self._add_image_action)
+        edit_menu.addAction(self._delete_action)
 
         view_menu = self.menuBar().addMenu("&Ver")
         view_menu.addAction(self._zoom_in_action)
@@ -351,11 +481,15 @@ class MainWindow(QMainWindow):
         self._status_page = QLabel("", self)
         self._status_activity = QLabel("", self)
         self._status_zoom = QLabel("100 %", self)
+        self._status_region = QLabel("", self)
+        self._status_edit = QLabel("Sin cambios", self)
 
         status = self.statusBar()
         status.addWidget(self._status_document, 1)
         status.addPermanentWidget(self._status_page)
+        status.addPermanentWidget(self._status_region)
         status.addPermanentWidget(self._status_activity)
+        status.addPermanentWidget(self._status_edit)
         status.addPermanentWidget(self._status_zoom)
 
     def _update_ui(self) -> None:
@@ -376,6 +510,8 @@ class MainWindow(QMainWindow):
             self._status_zoom.setText("100 %")
             self._canvas.set_message("Abre un PDF para empezar")
             self._thumbnails.set_page_count(0)
+            self._status_region.setText("")
+            self._refresh_edit_ui()
             return
 
         info = self._document_info
@@ -396,6 +532,7 @@ class MainWindow(QMainWindow):
 
         self._update_page_status()
         self._status_zoom.setText(f"{self._effective_scale() * 100:.0f} %")
+        self._refresh_edit_ui()
 
     def _update_page_status(self) -> None:
         info = self._document_info
@@ -429,6 +566,13 @@ class MainWindow(QMainWindow):
         self._zoom = 1.0
         self._fit_mode = FitMode.PAGE
         self._last_directory = path.parent
+        self._edit_session = EditSession()
+        self._selected_object_id = None
+        self._pending_text = None
+        self._pending_image = None
+        self._canvas.clear_region()
+        self._canvas.set_tool(CanvasTool.SELECT)
+        self._select_tool_action.setChecked(True)
 
         self._scheduler = RenderScheduler(self._renderer_factory(document), self)
         self._scheduler.rendered.connect(self._on_rendered)
@@ -472,8 +616,19 @@ class MainWindow(QMainWindow):
         self._view_rotation = 0
         self._zoom = 1.0
         self._fit_mode = FitMode.NONE
+        self._edit_session = None
+        self._selected_object_id = None
+        self._pending_text = None
+        self._pending_image = None
+        self._canvas.set_mapper(None)
+        self._canvas.set_objects(())
+        self._canvas.clear_region()
+        self._canvas.set_tool(CanvasTool.SELECT)
         self._canvas.set_image(None)
         self._thumbnails.set_page_count(0)
+        self._properties.set_object(None)
+        self._status_edit.setText("Sin cambios")
+        self._status_region.setText("")
 
     def _page_info(self, page_index: int) -> PageInfo:
         cached = self._page_infos.get(page_index)
@@ -536,6 +691,10 @@ class MainWindow(QMainWindow):
         if render.page_index != self._page_index or render.rotation != self._view_rotation:
             return
         if abs(render.scale - self._effective_scale()) > 0.01:
+            # El tamaño disponible cambió mientras se renderizaba (por ejemplo,
+            # al aparecer una barra de desplazamiento): se pide otra vez con la
+            # escala vigente para no quedarse en «Renderizando…».
+            self._request_render()
             return
 
         self._show_render(render)
@@ -549,8 +708,331 @@ class MainWindow(QMainWindow):
 
     def _show_render(self, render: RenderedPage) -> None:
         self._canvas.set_image(rendered_page_to_image(render))
+        try:
+            page_info = self._page_info(render.page_index)
+        except BeneError:
+            self._canvas.set_mapper(None)
+        else:
+            width, height = page_info.rotated_size
+            self._canvas.set_mapper(
+                CoordinateMapper(
+                    page_width=width,
+                    page_height=height,
+                    scale=render.scale,
+                    view_rotation=render.rotation,
+                )
+            )
+        self._refresh_edit_ui()
         self._status_activity.setText("Listo")
         self._update_page_status()
+
+    # --------------------------------------------------------------- edición
+
+    def set_canvas_tool(self, tool: CanvasTool) -> None:
+        if tool is not CanvasTool.PLACE:
+            self._cancel_placement()
+        self._canvas.set_tool(tool)
+        if tool is CanvasTool.SELECT:
+            self._select_tool_action.setChecked(True)
+        elif tool is CanvasTool.REGION:
+            self._region_tool_action.setChecked(True)
+
+    def add_text_object(
+        self,
+        rect: PdfRect,
+        text: str,
+        style: TextStyle | None = None,
+    ) -> TextObject | None:
+        session = self._edit_session
+        if session is None or not text.strip():
+            return None
+        obj = session.add_text(self._page_index, rect, text, style)
+        self._selected_object_id = obj.object_id
+        self._refresh_edit_ui()
+        return obj
+
+    def add_image_object(
+        self,
+        rect: PdfRect,
+        data: bytes,
+        mime_type: str,
+        *,
+        source_path: Path | None = None,
+    ) -> ImageObject | None:
+        session = self._edit_session
+        if session is None:
+            return None
+        obj = session.add_image(
+            self._page_index,
+            rect,
+            data,
+            mime_type,
+            source_path=source_path,
+        )
+        self._selected_object_id = obj.object_id
+        self._refresh_edit_ui()
+        return obj
+
+    def move_selected_object(self, rect: PdfRect) -> bool:
+        session = self._edit_session
+        if session is None or self._selected_object_id is None:
+            return False
+        session.move_object(self._selected_object_id, rect)
+        self._refresh_edit_ui()
+        return True
+
+    def resize_selected_object(self, rect: PdfRect) -> bool:
+        session = self._edit_session
+        if session is None or self._selected_object_id is None:
+            return False
+        session.resize_object(self._selected_object_id, rect)
+        self._refresh_edit_ui()
+        return True
+
+    def delete_selected_object(self) -> bool:
+        session = self._edit_session
+        if session is None or self._selected_object_id is None:
+            return False
+        session.delete_object(self._selected_object_id)
+        self._selected_object_id = None
+        self._refresh_edit_ui()
+        return True
+
+    def undo(self) -> bool:
+        session = self._edit_session
+        if session is None or not session.undo():
+            return False
+        if (
+            self._selected_object_id is not None
+            and session.object(self._selected_object_id) is None
+        ):
+            self._selected_object_id = None
+        self._refresh_edit_ui()
+        return True
+
+    def redo(self) -> bool:
+        session = self._edit_session
+        if session is None or not session.redo():
+            return False
+        self._refresh_edit_ui()
+        return True
+
+    def _refresh_edit_ui(self) -> None:
+        session = self._edit_session
+        if session is None:
+            self._canvas.set_objects(())
+            self._properties.set_object(None)
+            self._undo_action.setEnabled(False)
+            self._redo_action.setEnabled(False)
+            self._delete_action.setEnabled(False)
+            self._status_edit.setText("Sin cambios")
+            return
+
+        if (
+            self._selected_object_id is not None
+            and session.object(self._selected_object_id) is None
+        ):
+            self._selected_object_id = None
+
+        self._canvas.set_objects(session.objects_on_page(self._page_index))
+        selected = (
+            session.object(self._selected_object_id)
+            if self._selected_object_id is not None
+            else None
+        )
+        self._properties.set_object(selected)
+        self._undo_action.setEnabled(session.can_undo)
+        self._redo_action.setEnabled(session.can_redo)
+        self._delete_action.setEnabled(selected is not None)
+        self._status_edit.setText("Cambios sin exportar" if session.is_dirty else "Sin cambios")
+        if self._canvas.selected_object_id != self._selected_object_id:
+            self._canvas.select_object(self._selected_object_id)
+
+    def _on_selection_changed(self, object_id: object) -> None:
+        selected = object_id if isinstance(object_id, str) else None
+        self._selected_object_id = selected
+        session = self._edit_session
+        obj = session.object(selected) if session is not None and selected else None
+        self._properties.set_object(obj)
+        self._delete_action.setEnabled(obj is not None)
+
+    def _on_transform_requested(self, object_id: str, rect: object) -> None:
+        session = self._edit_session
+        if session is None or not isinstance(rect, PdfRect):
+            return
+        current = session.object(object_id)
+        if current is None:
+            return
+        same_size = (
+            abs(current.rect.width - rect.width) < 1e-6
+            and abs(current.rect.height - rect.height) < 1e-6
+        )
+        if same_size:
+            session.move_object(object_id, rect)
+        else:
+            session.resize_object(object_id, rect)
+        self._selected_object_id = object_id
+        self._refresh_edit_ui()
+
+    def _on_region_selected(self, region: object) -> None:
+        if not isinstance(region, PdfRect):
+            return
+        self._status_region.setText(
+            f"Región: {region.x0:.0f}, {region.y0:.0f} · "
+            f"{region.width:.0f} × {region.height:.0f} pt"
+        )
+
+    def _on_placement_requested(self, page_x: float, page_y: float) -> None:
+        if self._pending_text is not None:
+            rect = self._default_text_rect(page_x, page_y)
+            text, style = self._pending_text
+            self._pending_text = None
+            self.add_text_object(rect, text, style)
+        elif self._pending_image is not None:
+            loaded = self._pending_image
+            self._pending_image = None
+            rect = self._default_image_rect(page_x, page_y, loaded)
+            self.add_image_object(
+                rect,
+                loaded.data,
+                loaded.mime_type,
+                source_path=loaded.source_path,
+            )
+        else:
+            return
+
+        self._canvas.clear_region()
+        self.set_canvas_tool(CanvasTool.SELECT)
+        self._status_activity.setText("Listo")
+
+    def _on_properties_applied(self, x: float, y: float, width: float, height: float) -> None:
+        session = self._edit_session
+        if session is None or self._selected_object_id is None:
+            return
+        rect = self._clamped_rect(PdfRect.from_size(width, height, x=x, y=y))
+        session.resize_object(self._selected_object_id, rect)
+        self._refresh_edit_ui()
+
+    def _add_text(self) -> None:
+        if self._edit_session is None:
+            return
+        dialog = TextDialog(self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        self._pending_text = (dialog.text, dialog.chosen_style)
+        self._pending_image = None
+        region = self._canvas.region
+        if region is not None:
+            self._place_pending(region.x0, region.y0, region=region)
+            return
+        self._canvas.set_tool(CanvasTool.PLACE)
+        self._status_activity.setText("Haz clic en la página para colocar el texto")
+
+    def _add_image(self) -> None:
+        if self._edit_session is None:
+            return
+        filename, _ = QFileDialog.getOpenFileName(
+            self,
+            "Insertar imagen",
+            str(self._last_directory),
+            "Imágenes (*.png *.jpg *.jpeg)",
+        )
+        if not filename:
+            return
+        path = Path(filename)
+        try:
+            loaded = load_image(path)
+        except ImageLoadError as error:
+            QMessageBox.warning(self, APP_NAME, str(error))
+            return
+        self._last_directory = path.parent
+        self._pending_image = loaded
+        self._pending_text = None
+        region = self._canvas.region
+        if region is not None:
+            self._place_pending(region.x0, region.y0, region=region)
+            return
+        self._canvas.set_tool(CanvasTool.PLACE)
+        self._status_activity.setText("Haz clic en la página para colocar la imagen")
+
+    def _place_pending(
+        self,
+        page_x: float,
+        page_y: float,
+        *,
+        region: PdfRect | None = None,
+    ) -> None:
+        if region is not None:
+            rect = region
+        elif self._pending_text is not None:
+            rect = self._default_text_rect(page_x, page_y)
+        elif self._pending_image is not None:
+            rect = self._default_image_rect(page_x, page_y, self._pending_image)
+        else:
+            return
+
+        if self._pending_text is not None:
+            text, style = self._pending_text
+            self._pending_text = None
+            self.add_text_object(rect, text, style)
+        elif self._pending_image is not None:
+            loaded = self._pending_image
+            self._pending_image = None
+            self.add_image_object(
+                rect,
+                loaded.data,
+                loaded.mime_type,
+                source_path=loaded.source_path,
+            )
+
+        self._canvas.clear_region()
+        self.set_canvas_tool(CanvasTool.SELECT)
+        self._status_activity.setText("Listo")
+
+    def _cancel_placement(self) -> None:
+        self._pending_text = None
+        self._pending_image = None
+
+    def _page_size(self) -> tuple[float, float]:
+        try:
+            return self._page_info(self._page_index).rotated_size
+        except BeneError:
+            return (1.0, 1.0)
+
+    def _default_text_rect(self, page_x: float, page_y: float) -> PdfRect:
+        page_width, page_height = self._page_size()
+        width = min(DEFAULT_TEXT_WIDTH, page_width)
+        height = min(DEFAULT_TEXT_HEIGHT, page_height)
+        return self._clamped_rect(PdfRect.from_size(width, height, x=page_x, y=page_y))
+
+    def _default_image_rect(self, page_x: float, page_y: float, loaded: LoadedImage) -> PdfRect:
+        page_width, page_height = self._page_size()
+        width = min(DEFAULT_IMAGE_WIDTH, page_width)
+        height = width * loaded.height / loaded.width
+        if height > page_height:
+            height = page_height
+            width = height * loaded.width / loaded.height
+        return self._clamped_rect(PdfRect.from_size(width, height, x=page_x, y=page_y))
+
+    def _clamped_rect(self, rect: PdfRect) -> PdfRect:
+        page_width, page_height = self._page_size()
+        x0 = max(0.0, min(rect.x0, page_width - 1.0))
+        y0 = max(0.0, min(rect.y0, page_height - 1.0))
+        x1 = max(x0 + 1.0, min(rect.x1, page_width))
+        y1 = max(y0 + 1.0, min(rect.y1, page_height))
+        return PdfRect(x0, y0, x1, y1)
+
+    def _confirm_discard_changes(self) -> bool:
+        if not self.is_dirty:
+            return True
+        result = QMessageBox.warning(
+            self,
+            APP_NAME,
+            "Hay cambios sin exportar en este documento.\nSi continúas, se perderán.",
+            QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        return result == QMessageBox.StandardButton.Discard
 
     # -------------------------------------------------------------- acciones
 
@@ -598,6 +1080,9 @@ class MainWindow(QMainWindow):
             self._resize_timer.start()
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        if not self._confirm_discard_changes():
+            event.ignore()
+            return
         logger.info("Cerrando la aplicación")
         self._teardown_document()
         super().closeEvent(event)

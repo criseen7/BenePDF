@@ -2,7 +2,7 @@
 
 Aplicación de escritorio para visualizar, organizar y editar documentos PDF sin subir nada a servicios externos.
 
-El proyecto está en fase de construcción: la iteración 1 cubre apertura, visualización, navegación, zoom, rotación de vista y detección de páginas escaneadas. La edición de texto e imágenes llega en la iteración 2 y la redacción permanente en la iteración 3.
+El proyecto está en fase de construcción: la iteración 1 cubre apertura, visualización, navegación, zoom, rotación de vista y detección de páginas escaneadas. La iteración 2 añade miniaturas, selección de región, texto e imágenes, transformaciones y deshacer/rehacer, todo en memoria. La exportación y la redacción permanente llegan en la iteración 3.
 
 - Requisitos y criterios de aceptación: [docs/requirements.md](docs/requirements.md)
 - Plan de trabajo y estado: [PLAN.md](PLAN.md)
@@ -47,9 +47,23 @@ Al abrirlo, Bene PDF muestra la primera página ajustada a la ventana. Si el PDF
 
 - Escribe el número de página en el selector de la barra superior y pulsa `Enter`.
 - Usa los botones **◀** y **▶**, o las teclas `PgUp` y `PgDn`, para ir a la página anterior o siguiente.
+- Haz clic en una miniatura del panel **Páginas** para saltar directamente a esa página. Las miniaturas se generan en segundo plano y la página actual queda resaltada.
 - La barra de estado indica la página actual, el total, la clasificación orientativa de la página (texto, imagen escaneada, contenido gráfico o página vacía), sus dimensiones en puntos y el zoom aplicado.
 
 Los renders se hacen en segundo plano: mientras se prepara una página verás **Renderizando…** y, al terminar, **Listo**. Las páginas ya visitadas se conservan en memoria para que volver atrás sea inmediato.
+
+### Editar el documento
+
+Los cambios se guardan **solo en memoria** durante la sesión: el PDF original nunca se modifica. La exportación llegará en la iteración 3.
+
+1. **Seleccionar región** (`Ctrl+Shift+R`): arrastra sobre la página para marcar un rectángulo. La barra de estado muestra sus coordenadas y tamaño en puntos PDF.
+2. **Añadir texto** (`Ctrl+T`): escribe el contenido y elige fuente, tamaño, color y alineación. Si hay una región seleccionada, el texto ocupa esa región; si no, la herramienta queda activa y el texto se coloca con un clic.
+3. **Insertar imagen** (`Ctrl+I`): admite PNG y JPEG de hasta 20 MB. Igual que el texto, usa la región seleccionada o el siguiente clic. La imagen se ajusta a la proporción original.
+4. **Mover y redimensionar**: con la herramienta **Seleccionar** (`Ctrl+Shift+V`), haz clic en un objeto para seleccionarlo, arrástralo para moverlo o usa las asas de las esquinas para cambiar su tamaño. El panel **Propiedades** permite introducir X, Y, ancho y alto en puntos PDF.
+5. **Eliminar** (`Supr`): borra el objeto seleccionado.
+6. **Deshacer / Rehacer** (`Ctrl+Z` / `Ctrl+Y`): recorre el historial completo de la sesión.
+
+La barra de estado muestra **Cambios sin exportar** cuando hay ediciones activas. Al cerrar el documento, abrir otro PDF o salir, la aplicación pide confirmación antes de descartarlas.
 
 ### Zoom y ajuste
 
@@ -83,6 +97,13 @@ Pulsa **Rotar vista 90°** o `Ctrl+R` para girar la página en pantalla 90° en 
 | Ajustar ancho | `Ctrl+1` |
 | Ajustar página | `Ctrl+2` |
 | Rotar vista 90° | `Ctrl+R` |
+| Herramienta seleccionar | `Ctrl+Shift+V` |
+| Seleccionar región | `Ctrl+Shift+R` |
+| Añadir texto | `Ctrl+T` |
+| Insertar imagen | `Ctrl+I` |
+| Deshacer | `Ctrl+Z` |
+| Rehacer | `Ctrl+Y` |
+| Eliminar objeto | `Supr` |
 | Cerrar documento | `Ctrl+W` |
 | Salir | `Ctrl+Q` |
 
@@ -97,8 +118,9 @@ El registro rota a 2 MB, conserva tres copias y nunca contiene el texto del docu
 
 ### Limitaciones de esta iteración
 
-- Todavía no se pueden editar ni guardar cambios: esta iteración es de visualización y el PDF original nunca se modifica.
-- No hay miniaturas, búsqueda, OCR, impresión ni exportación.
+- Los cambios de edición viven solo en memoria: todavía no se pueden exportar ni guardar. El PDF original nunca se modifica.
+- No hay redacción permanente, búsqueda, OCR ni impresión; llegan en la iteración 3 o más adelante.
+- Las miniaturas y los renders se generan a partir del PDF original, así que las ediciones no aparecen en ellas.
 - La rotación de vista no se guarda en el archivo.
 - Si una página concreta no se puede renderizar, se muestra un aviso y el detalle queda en el registro.
 

@@ -1,6 +1,6 @@
 # PLAN — Bene PDF
 
-- **Estado:** iteración 2 en curso (modelo de edición e historial completados)
+- **Estado:** iteración 2 implementada y verificada en modo offscreen
 - **Última actualización:** 2026-10-25
 - **Especificación de referencia:** [docs/requirements.md](docs/requirements.md)
 
@@ -140,18 +140,18 @@ Además del smoke test automático, se ejecutó la aplicación real en modo offs
 
 ### Paso 3 — Texto e imágenes
 
-- [ ] Diálogo de texto: contenido, fuente, tamaño, color y alineación
-- [ ] Colocación de texto en una región o con un clic
-- [ ] Inserción de PNG/JPEG desde archivo, con límite de tamaño
-- [ ] Vista previa de texto e imágenes con `QPainter`
-- [ ] Eliminación de objetos añadidos
+- [x] Diálogo de texto: contenido, fuente, tamaño, color y alineación
+- [x] Colocación de texto en una región o con un clic
+- [x] Inserción de PNG/JPEG desde archivo, con límite de tamaño
+- [x] Vista previa de texto e imágenes con `QPainter`
+- [x] Eliminación de objetos añadidos
 
 ### Paso 4 — Historial y propiedades en la interfaz
 
-- [ ] Acciones Deshacer/Rehacer con atajos y estado habilitado
-- [ ] Panel de propiedades con posición y tamaño numéricos
-- [ ] Indicador de cambios sin exportar y aviso al cerrar o abrir otro documento
-- [ ] Sincronización entre selección del lienzo y panel de propiedades
+- [x] Acciones Deshacer/Rehacer con atajos y estado habilitado
+- [x] Panel de propiedades con posición y tamaño numéricos
+- [x] Indicador de cambios sin exportar y aviso al cerrar o abrir otro documento
+- [x] Sincronización entre selección del lienzo y panel de propiedades
 
 ### Paso 5 — Miniaturas
 
@@ -161,10 +161,10 @@ Además del smoke test automático, se ejecutó la aplicación real en modo offs
 
 ### Paso 6 — Verificación
 
-- [ ] Pruebas unitarias, de integración y de interfaz en verde
-- [ ] `ruff` y `mypy` sin errores
-- [ ] Smoke real offscreen con PyMuPDF: miniaturas, texto, imagen y deshacer
-- [ ] README y bitácora actualizados
+- [x] Pruebas unitarias, de integración y de interfaz en verde
+- [x] `ruff` y `mypy` sin errores
+- [x] Smoke real offscreen con PyMuPDF: miniaturas, texto, imagen y deshacer
+- [x] README y bitácora actualizados
 
 ## 4. Estructura objetivo
 
@@ -247,6 +247,7 @@ EditorPDF-Local/
 | 2026-10-25 | Iteración 2 iniciada. Paso 1 completado: modelos de edición, comandos inmutables, aplicación de comandos, historial y sesión con deshacer/rehacer. 31 pruebas nuevas. |
 | 2026-10-25 | Paso 2 completado: `CoordinateMapper` con zoom y las cuatro rotaciones, selección de región, dibujo de texto e imágenes, selección y transformación por arrastre en el lienzo. 47 pruebas nuevas, 303 en total. |
 | 2026-10-25 | Paso 5 completado: cargador secuencial de miniaturas en segundo plano, panel lateral navegable y cancelación al cerrar. 13 pruebas nuevas, 316 en total. |
+| 2026-10-25 | Pasos 3, 4 y 6 completados: diálogo de texto, panel de propiedades, carga validada de PNG/JPEG, integración de todas las acciones de edición en la ventana principal, deshacer/rehacer, aviso de cambios sin exportar y smoke real con PyMuPDF. 34 pruebas nuevas, 350 en total. El render se repite si la escala cambia mientras está en curso para no quedarse en «Renderizando…». |
 
 ## 10. Notas de entorno
 

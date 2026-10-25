@@ -224,6 +224,9 @@ class TestZoom:
         assert image.width() < 100
 
     def test_ajustar_ancho_y_pagina(self, qtbot: QtBot, window: MainWindow, tmp_path: Path) -> None:
+        # Una ventana ancha hace que el ajuste al ancho supere al de página, que
+        # queda limitado por la altura disponible.
+        window.resize(1600, 900)
         open_ready(qtbot, window, tmp_path)
         assert window.fit_mode is FitMode.PAGE
         escala_pagina = window.current_scale
