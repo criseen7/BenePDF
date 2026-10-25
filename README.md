@@ -1,4 +1,4 @@
-# Bene
+# Bene PDF
 
 Aplicación de escritorio para visualizar, organizar y editar documentos PDF sin subir nada a servicios externos.
 
@@ -37,6 +37,7 @@ ruff check .            # lint
 ruff format .           # formato
 mypy                    # tipado estático
 python scripts/verify_env.py   # comprueba Python, PyMuPDF y Qt
+python scripts/benchmark_open.py  # mide el criterio de rendimiento RNF-001
 ```
 
 Para ejecutar la interfaz en un entorno sin pantalla (CI):

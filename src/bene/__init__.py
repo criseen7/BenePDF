@@ -1,3 +1,3 @@
-"""Bene: editor de PDF local."""
+"""Bene PDF: editor de PDF local."""
 
 __version__ = "0.1.0"

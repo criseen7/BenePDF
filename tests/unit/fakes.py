@@ -63,8 +63,10 @@ class FakePdfEngine:
     def __init__(self, pages: Sequence[PageInfo], *, title: str = "Documento de prueba") -> None:
         self._pages = tuple(pages)
         self._title = title
+        self.opened: list[tuple[Path, str | None]] = []
 
     def open_document(self, path: Path, *, password: str | None = None) -> FakeDocument:
+        self.opened.append((path, password))
         info = DocumentInfo(
             path=path,
             page_count=len(self._pages),

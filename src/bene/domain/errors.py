@@ -54,6 +54,24 @@ class UnsupportedDocumentError(DocumentError):
         super().__init__(path, "El archivo no es un PDF válido o está dañado")
 
 
+class DocumentTooLargeError(DocumentError):
+    """El archivo supera el límite configurado para abrirlo."""
+
+    max_size_bytes: int
+
+    def __init__(self, path: Path, max_size_bytes: int) -> None:
+        limit_mb = max_size_bytes / (1024 * 1024)
+        super().__init__(path, f"El archivo supera el límite de {limit_mb:.0f} MB")
+        self.max_size_bytes = max_size_bytes
+
+
+class DocumentClosedError(BeneError):
+    """Se intentó usar un documento que ya se había cerrado."""
+
+    def __init__(self) -> None:
+        super().__init__("El documento ya está cerrado")
+
+
 class EncryptedDocumentError(DocumentError):
     """El PDF requiere contraseña, o la facilitada no es correcta."""
 

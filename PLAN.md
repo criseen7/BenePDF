@@ -1,4 +1,4 @@
-# PLAN — Bene
+# PLAN — Bene PDF
 
 - **Estado:** iteración 1 en curso
 - **Última actualización:** 2026-10-24
@@ -8,7 +8,7 @@
 
 | Tema | Decisión | Motivo |
 |---|---|---|
-| Nombre | **Bene** (provisional) | Elegido por el usuario; paquete Python `bene`, comando `bene` |
+| Nombre | **Bene PDF** (provisional) | Elegido por el usuario; paquete Python `bene`, comando `bene` |
 | Distribución | Uso personal, sin distribución | Permite usar PyMuPDF bajo AGPL sin obligaciones de distribución |
 | Lenguaje | Python 3.12 (Windows nativo) | Es la versión instalada en la máquina objetivo y la que soportan todas las ruedas |
 | Interfaz | PySide6 6.12, textos en español | Qt cubre visor, diálogos y tareas en segundo plano; licencia LGPL |
@@ -50,15 +50,37 @@ explícitamente quién cierra el documento.
 
 ### Paso 2 — Adaptador PyMuPDF
 
-- [ ] `infrastructure/pdf/pymupdf_engine.py`, único módulo que importa `pymupdf`
-- [ ] Render RGB888 con matriz de escala
-- [ ] Contraseña en memoria para PDF cifrados; detección de texto/escaneado
-- [ ] Traducción de errores de MuPDF a errores de dominio
+- [x] `infrastructure/pdf/pymupdf_engine.py`, único módulo que importa `pymupdf`
+- [x] Render RGB888 con matriz de escala
+- [x] Contraseña en memoria para PDF cifrados; detección de texto/escaneado
+- [x] Traducción de errores de MuPDF a errores de dominio
+
+Detalles verificados contra la API real de PyMuPDF 2.0:
+
+- `page.rect` ya incluye `/Rotate`, así que `PageInfo` guarda las dimensiones sin rotación y la rotación aparte; `rotated_size` da el tamaño visible.
+- `authenticate()` funciona aunque `needs_pass` siga activo, y `is_encrypted` pasa a `False` tras autenticar: el indicador se captura **antes** de autenticar.
+- PyMuPDF abre `.txt`, imágenes y EPUB como documentos no-PDF; el adaptador rechaza todo lo que no tenga `is_pdf`.
+- Cada sesión usa un `threading.Lock`: PyMuPDF no es seguro entre hilos y el visor pedirá renders desde un hilo de trabajo.
+- Límite de 40 MP por render, comprobado antes de reservar memoria.
 
 ### Paso 3 — Casos de uso
 
-- [ ] `open_document.py`: validación de ruta, extensión y tamaño máximo
-- [ ] `render_page.py`: validación de índice y zoom
+- [x] `open_document.py`: validación de ruta, extensión y tamaño máximo
+- [x] `render_page.py`: validación de índice y zoom
+
+`OpenDocument` valida existencia, tipo de entrada y tamaño (512 MB por defecto) y
+delega en el motor; `RenderPage` valida índice, rotación de vista, escala
+(0,1–8) y el límite de píxeles. Los porcentajes de zoom y los mensajes quedan
+fuera de la interfaz, que solo traducirá errores a texto comprensible.
+
+Resultado medido con `scripts/benchmark_open.py` (100 páginas de texto, 0,58 MB):
+
+| Medida | Tiempo |
+|---|---|
+| Apertura | 0,8 ms |
+| Info de la página 1 | 8,1 ms |
+| Render al 100 % | 3,9 ms |
+| Primera página visible | **0,01 s** (objetivo ≤ 3 s) |
 
 ### Paso 4 — Presentación
 
@@ -149,6 +171,7 @@ EditorPDF-Local/
 |---|---|
 | 2026-10-24 | Análisis de requisitos y plan acordado. Paso 0 ejecutado: proyecto, herramientas, docs y entorno verificado. |
 | 2026-10-24 | Nombre provisional actualizado a **Bene PDF**: paquete `bene`, comando `bene` y referencias del proyecto. Paso 1 completado: modelos de dominio, errores tipados y puerto `PdfEngine` con su DTO. 50 pruebas en verde. |
+| 2026-10-24 | Pasos 2 y 3 completados: adaptador PyMuPDF (apertura, cifrado, clasificación, render con cerrojo) y casos de uso de apertura y render. 71 pruebas nuevas, 121 en total. Benchmark de 100 páginas: primera página visible en 0,01 s. |
 
 ## 8. Notas de entorno
 
