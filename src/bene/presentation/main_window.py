@@ -36,10 +36,11 @@ from PySide6.QtWidgets import (
 
 from bene.application.ports.pdf_engine import OpenedDocument, RenderedPage
 from bene.application.use_cases.edit_session import EditSession
+from bene.application.use_cases.export_document import ExportDocument, ExportResult
 from bene.application.use_cases.open_document import OpenDocument
 from bene.application.use_cases.render_page import MAX_RENDER_PIXELS
 from bene.config import APP_NAME
-from bene.domain.editing import ImageObject, TextObject, TextStyle
+from bene.domain.editing import ImageObject, RedactionObject, TextObject, TextStyle
 from bene.domain.errors import BeneError, EncryptedDocumentError
 from bene.domain.models import DocumentInfo, PageInfo, PageKind, PdfRect
 from bene.presentation.dialogs.text_dialog import TextDialog
@@ -81,6 +82,7 @@ class MainWindow(QMainWindow):
         super().__init__(parent)
         self._open_document = open_document
         self._renderer_factory = renderer_factory
+        self._export_document = ExportDocument()
 
         self._document: OpenedDocument | None = None
         self._document_info: DocumentInfo | None = None
@@ -271,6 +273,7 @@ class MainWindow(QMainWindow):
         self._canvas.selection_changed.connect(self._on_selection_changed)
         self._canvas.transform_requested.connect(self._on_transform_requested)
         self._canvas.region_selected.connect(self._on_region_selected)
+        self._canvas.redaction_requested.connect(self._on_redaction_requested)
         self._canvas.placement_requested.connect(self._on_placement_requested)
         self._scroll = QScrollArea(self)
         self._scroll.setWidget(self._canvas)
@@ -304,6 +307,14 @@ class MainWindow(QMainWindow):
         self._open_action.setShortcut(QKeySequence.StandardKey.Open)
         self._open_action.setStatusTip("Abrir un documento PDF")
         self._open_action.triggered.connect(self._choose_file)
+
+        self._export_action = QAction("Exportar como…", self)
+        self._export_action.setObjectName("accion_exportar")
+        self._export_action.setShortcut(QKeySequence("Ctrl+Shift+S"))
+        self._export_action.setStatusTip(
+            "Guardar una copia nueva con los cambios; el original no se modifica"
+        )
+        self._export_action.triggered.connect(lambda: self._export_as())
 
         self._zoom_in_action = QAction("Acercar", self)
         self._zoom_in_action.setShortcut(QKeySequence.StandardKey.ZoomIn)
@@ -346,10 +357,20 @@ class MainWindow(QMainWindow):
         self._region_tool_action.setShortcut(QKeySequence("Ctrl+Shift+R"))
         self._region_tool_action.triggered.connect(lambda: self.set_canvas_tool(CanvasTool.REGION))
 
+        self._redact_tool_action = QAction("Redactar región", self)
+        self._redact_tool_action.setObjectName("accion_redactar")
+        self._redact_tool_action.setCheckable(True)
+        self._redact_tool_action.setShortcut(QKeySequence("Ctrl+Shift+X"))
+        self._redact_tool_action.setStatusTip(
+            "Arrastra sobre la página para eliminar contenido de forma permanente"
+        )
+        self._redact_tool_action.triggered.connect(lambda: self.set_canvas_tool(CanvasTool.REDACT))
+
         self._tool_group = QActionGroup(self)
         self._tool_group.setExclusive(True)
         self._tool_group.addAction(self._select_tool_action)
         self._tool_group.addAction(self._region_tool_action)
+        self._tool_group.addAction(self._redact_tool_action)
 
         self._add_text_action = QAction("Añadir texto…", self)
         self._add_text_action.setObjectName("accion_anadir_texto")
@@ -393,6 +414,7 @@ class MainWindow(QMainWindow):
             self._close_action,
             self._select_tool_action,
             self._region_tool_action,
+            self._redact_tool_action,
             self._add_text_action,
             self._add_image_action,
             self._undo_action,
@@ -425,6 +447,7 @@ class MainWindow(QMainWindow):
         toolbar.setMovable(False)
         toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
         toolbar.addAction(self._open_action)
+        toolbar.addAction(self._export_action)
         toolbar.addSeparator()
         toolbar.addWidget(self._previous_button)
         toolbar.addWidget(self._page_spin)
@@ -442,6 +465,7 @@ class MainWindow(QMainWindow):
         toolbar.addSeparator()
         toolbar.addAction(self._select_tool_action)
         toolbar.addAction(self._region_tool_action)
+        toolbar.addAction(self._redact_tool_action)
         toolbar.addAction(self._add_text_action)
         toolbar.addAction(self._add_image_action)
         toolbar.addAction(self._undo_action)
@@ -451,6 +475,7 @@ class MainWindow(QMainWindow):
 
         file_menu = self.menuBar().addMenu("&Archivo")
         file_menu.addAction(self._open_action)
+        file_menu.addAction(self._export_action)
         file_menu.addAction(self._close_action)
         file_menu.addSeparator()
         file_menu.addAction(self._quit_action)
@@ -461,6 +486,7 @@ class MainWindow(QMainWindow):
         edit_menu.addSeparator()
         edit_menu.addAction(self._select_tool_action)
         edit_menu.addAction(self._region_tool_action)
+        edit_menu.addAction(self._redact_tool_action)
         edit_menu.addSeparator()
         edit_menu.addAction(self._add_text_action)
         edit_menu.addAction(self._add_image_action)
@@ -518,6 +544,16 @@ class MainWindow(QMainWindow):
 
         info = self._document_info
         assert info is not None
+
+        self._export_action.setEnabled(not info.encrypted)
+        if info.encrypted:
+            self._export_action.setStatusTip(
+                "No se puede exportar un PDF cifrado; guarda antes una copia sin protección"
+            )
+        else:
+            self._export_action.setStatusTip(
+                "Guardar una copia nueva con los cambios; el original no se modifica"
+            )
 
         title = f"{APP_NAME} — {info.title}"
         if info.encrypted:
@@ -776,6 +812,8 @@ class MainWindow(QMainWindow):
             self._select_tool_action.setChecked(True)
         elif tool is CanvasTool.REGION:
             self._region_tool_action.setChecked(True)
+        elif tool is CanvasTool.REDACT:
+            self._redact_tool_action.setChecked(True)
 
     def add_text_object(
         self,
@@ -809,6 +847,15 @@ class MainWindow(QMainWindow):
             mime_type,
             source_path=source_path,
         )
+        self._selected_object_id = obj.object_id
+        self._refresh_edit_ui()
+        return obj
+
+    def add_redaction_object(self, rect: PdfRect) -> RedactionObject | None:
+        session = self._edit_session
+        if session is None or rect.is_empty:
+            return None
+        obj = session.add_redaction(self._page_index, rect)
         self._selected_object_id = obj.object_id
         self._refresh_edit_ui()
         return obj
@@ -921,6 +968,24 @@ class MainWindow(QMainWindow):
             f"Región: {region.x0:.0f}, {region.y0:.0f} · "
             f"{region.width:.0f} × {region.height:.0f} pt"
         )
+
+    def _on_redaction_requested(self, region: object) -> None:
+        if not isinstance(region, PdfRect) or self._edit_session is None:
+            return
+        result = QMessageBox.warning(
+            self,
+            APP_NAME,
+            "Se marcará esta región para redactarla.\n\n"
+            "Al exportar, el contenido subyacente se eliminará de forma permanente "
+            "del archivo nuevo y no se podrá recuperar. El PDF original no cambia.\n\n"
+            "¿Marcar la región para redacción?",
+            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if result != QMessageBox.StandardButton.Ok:
+            return
+        self.add_redaction_object(region)
+        self._status_activity.setText("Redacción marcada; se aplicará al exportar")
 
     def _on_placement_requested(self, page_x: float, page_y: float) -> None:
         if self._pending_text is not None:
@@ -1068,11 +1133,101 @@ class MainWindow(QMainWindow):
         result = QMessageBox.warning(
             self,
             APP_NAME,
-            "Hay cambios sin exportar en este documento.\nSi continúas, se perderán.",
-            QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
+            "Hay cambios sin exportar en este documento.\n"
+            "Puedes guardar una copia nueva, descartar los cambios o cancelar.",
+            QMessageBox.StandardButton.Save
+            | QMessageBox.StandardButton.Discard
+            | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Save,
+        )
+        if result == QMessageBox.StandardButton.Save:
+            return self._export_as()
+        return result == QMessageBox.StandardButton.Discard
+
+    def export_document(self, destination: str | Path) -> ExportResult | None:
+        """Exporta el estado actual y marca la sesión como guardada."""
+        document = self._document
+        session = self._edit_session
+        if document is None or session is None:
+            return None
+        try:
+            result = self._export_document(
+                document,
+                destination,
+                objects=session.objects,
+            )
+        except BeneError as error:
+            logger.warning("No se pudo exportar a %s: %s", destination, error)
+            self._show_error(error)
+            return None
+        except Exception:
+            logger.exception("Error inesperado al exportar a %s", destination)
+            QMessageBox.critical(
+                self,
+                APP_NAME,
+                "Se produjo un error inesperado al exportar.\n"
+                "El detalle técnico está en el registro.",
+            )
+            return None
+
+        session.mark_saved()
+        self._last_directory = result.destination.parent
+        self._refresh_edit_ui()
+        self._status_activity.setText(f"Exportado: {result.destination.name}")
+        logger.info(
+            "Documento exportado a %s (%d redacciones, %d textos, %d imágenes)",
+            result.destination,
+            result.redaction_count,
+            result.text_count,
+            result.image_count,
+        )
+        return result
+
+    def _export_as(self) -> bool:
+        info = self._document_info
+        session = self._edit_session
+        if info is None or session is None:
+            return False
+        if info.encrypted:
+            QMessageBox.warning(
+                self,
+                APP_NAME,
+                "No se puede exportar un PDF cifrado.\n\n"
+                "Guarda antes una copia sin protección y vuelve a abrirla.",
+            )
+            return False
+
+        default_name = f"{info.path.stem}-editado.pdf"
+        filename, _ = QFileDialog.getSaveFileName(
+            self,
+            "Exportar PDF",
+            str(info.path.with_name(default_name)),
+            "Documentos PDF (*.pdf)",
+        )
+        if not filename:
+            return False
+        destination = Path(filename)
+        if destination.suffix.lower() != ".pdf":
+            destination = destination.with_suffix(".pdf")
+
+        redactions = sum(isinstance(obj, RedactionObject) for obj in session.objects)
+        if redactions and not self._confirm_export_redactions(redactions):
+            return False
+        return self.export_document(destination) is not None
+
+    def _confirm_export_redactions(self, count: int) -> bool:
+        region_word = "región" if count == 1 else "regiones"
+        result = QMessageBox.warning(
+            self,
+            APP_NAME,
+            f"Se aplicarán {count} {region_word} de redacción al archivo exportado.\n\n"
+            "El contenido subyacente se eliminará de forma permanente y no se podrá "
+            "recuperar. El PDF original no se modifica.\n\n"
+            "¿Exportar ahora?",
+            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
             QMessageBox.StandardButton.Cancel,
         )
-        return result == QMessageBox.StandardButton.Discard
+        return result == QMessageBox.StandardButton.Ok
 
     # -------------------------------------------------------------- acciones
 

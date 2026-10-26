@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pymupdf
 import pytest
 from PySide6.QtCore import QBuffer, QByteArray, QIODevice
 from PySide6.QtGui import QColor, QImage, QImageWriter
@@ -16,7 +17,7 @@ from pytestqt.qtbot import QtBot
 
 from bene.application.use_cases.open_document import OpenDocument
 from bene.application.use_cases.render_page import RenderPage
-from bene.domain.editing import EditObject, ImageObject, TextObject
+from bene.domain.editing import EditObject, ImageObject, RedactionObject, TextObject, TextStyle
 from bene.domain.models import PdfRect
 from bene.infrastructure.pdf.pymupdf_engine import PyMuPDFEngine
 from bene.presentation.main_window import MainWindow
@@ -109,5 +110,49 @@ def test_flujo_real_de_miniaturas_y_edicion(
         "warning",
         lambda *_args, **_kwargs: QMessageBox.StandardButton.Discard,
     )
+    window.close_document()
+    assert window.edit_session is None
+
+
+def test_flujo_real_de_redaccion_y_exportacion(qtbot: QtBot, tmp_path: Path) -> None:
+    path = synthetic.make_text_pdf(tmp_path / "real.pdf", title="Smoke de redacción")
+    original_bytes = path.read_bytes()
+    destination = tmp_path / "exportado.pdf"
+
+    window = MainWindow(
+        open_document=OpenDocument(PyMuPDFEngine()),
+        renderer_factory=RenderPage,
+    )
+    qtbot.addWidget(window)
+    window.resize(1100, 850)
+    window.show()
+
+    assert window.open_path(path) is True
+    qtbot.waitUntil(
+        lambda: window.canvas.has_image and window.activity == "Listo",
+        timeout=TIMEOUT_MS,
+    )
+
+    redaction = window.add_redaction_object(PdfRect(60, 80, 500, 120))
+    assert isinstance(redaction, RedactionObject)
+    text = window.add_text_object(PdfRect(60, 80, 500, 120), "REEMPLAZO", TextStyle(font_size=14))
+    assert isinstance(text, TextObject)
+    assert window.is_dirty is True
+
+    result = window.export_document(destination)
+
+    assert result is not None
+    assert result.redaction_count == 1
+    assert result.text_count == 1
+    assert path.read_bytes() == original_bytes
+    assert window.is_dirty is False
+    assert window.edit_status == "Sin cambios"
+
+    with pymupdf.open(destination) as document:
+        exported = document[0].get_text("text")
+    assert "Contrato de prueba" not in exported
+    assert "REEMPLAZO" in exported
+    assert "Texto nativo seleccionable" in exported
+
     window.close_document()
     assert window.edit_session is None
