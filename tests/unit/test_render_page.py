@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from bene.application.ports.pdf_engine import RenderedPage
-from bene.application.use_cases.render_page import MAX_SCALE, MIN_SCALE, RenderPage
+from bene.application.use_cases.render_page import MAX_RENDER_SCALE, MIN_SCALE, RenderPage
 from bene.domain.errors import PageOutOfRangeError, RenderError
 from tests.unit.fakes import FakePdfEngine, make_pages
 
@@ -47,10 +47,20 @@ def test_rotacion_invalida(renderer: RenderPage, rotation: int) -> None:
         renderer(0, scale=1.0, rotation=rotation)
 
 
-@pytest.mark.parametrize("scale", [0.0, -1.0, MIN_SCALE / 2, MAX_SCALE * 2, float("nan")])
+@pytest.mark.parametrize("scale", [0.0, -1.0, MIN_SCALE / 2, MAX_RENDER_SCALE * 2, float("nan")])
 def test_escala_fuera_de_rango(renderer: RenderPage, scale: float) -> None:
     with pytest.raises(ValueError, match="Escala"):
         renderer(0, scale=scale)
+
+
+def test_admite_escala_de_pantalla_hidpi() -> None:
+    """Un zoom lógico alto en una pantalla HiDPI supera MAX_SCALE sin ser un error."""
+    document = FakePdfEngine(make_pages(1)).open_document(Path("documento.pdf"))
+    renderer = RenderPage(document, max_render_pixels=200_000_000)
+
+    result = renderer(0, scale=16.0)
+
+    assert result.scale == 16.0
 
 
 def test_limita_los_pixeles_del_render() -> None:

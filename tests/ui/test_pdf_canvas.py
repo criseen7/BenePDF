@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import cast
 
 import pytest
-from PySide6.QtCore import QSize
+from PySide6.QtCore import QSize, QSizeF
 from PySide6.QtGui import QColor, QImage
 from pytestqt.qtbot import QtBot
 
@@ -81,6 +81,27 @@ def test_lienzo_muestra_la_imagen(qtbot: QtBot) -> None:
     assert canvas.has_image is True
     assert canvas.image is image
     assert canvas.size() == QSize(120, 80)
+
+
+def test_la_imagen_conserva_la_densidad_de_pantalla() -> None:
+    render, _ = make_red_render(width=4, height=3)
+
+    image = rendered_page_to_image(render, pixel_ratio=2.0)
+
+    assert image.devicePixelRatio() == 2.0
+    assert image.size() == QSize(4, 3)
+    assert image.deviceIndependentSize() == QSizeF(2.0, 1.5)
+
+
+def test_lienzo_usa_el_tamano_logico_en_hidpi(qtbot: QtBot) -> None:
+    canvas = PdfCanvas()
+    qtbot.addWidget(canvas)
+    image = make_image(120, 80)
+    image.setDevicePixelRatio(2.0)
+
+    canvas.set_image(image)
+
+    assert canvas.size() == QSize(60, 40)
 
 
 def test_lienzo_vuelve_al_marcador(qtbot: QtBot) -> None:

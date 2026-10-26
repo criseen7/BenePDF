@@ -11,6 +11,10 @@ from bene.domain.models import VALID_ROTATIONS
 
 MIN_SCALE: Final[float] = 0.1
 MAX_SCALE: Final[float] = 8.0
+# El render se pide a escala lógica × densidad de la pantalla. Este margen
+# permite renderizar con nitidez en pantallas HiDPI sin aceptar peticiones
+# absurdas; el coste real lo limita MAX_RENDER_PIXELS.
+MAX_RENDER_SCALE: Final[float] = MAX_SCALE * 8.0
 MAX_RENDER_PIXELS: Final[int] = 40_000_000
 
 
@@ -37,7 +41,7 @@ class RenderPage:
         if rotation not in VALID_ROTATIONS:
             raise ValueError(f"Rotación de vista inválida: {rotation}")
 
-        if not math.isfinite(scale) or not MIN_SCALE <= scale <= MAX_SCALE:
+        if not math.isfinite(scale) or not MIN_SCALE <= scale <= MAX_RENDER_SCALE:
             raise ValueError(f"Escala fuera de rango: {scale}")
 
         width, height = self._document.page_info(page_index).rotated_size

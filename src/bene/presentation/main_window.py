@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from collections.abc import Callable
 from pathlib import Path
 from typing import Final
@@ -36,6 +37,7 @@ from PySide6.QtWidgets import (
 from bene.application.ports.pdf_engine import OpenedDocument, RenderedPage
 from bene.application.use_cases.edit_session import EditSession
 from bene.application.use_cases.open_document import OpenDocument
+from bene.application.use_cases.render_page import MAX_RENDER_PIXELS
 from bene.config import APP_NAME
 from bene.domain.editing import ImageObject, TextObject, TextStyle
 from bene.domain.errors import BeneError, EncryptedDocumentError
@@ -325,7 +327,7 @@ class MainWindow(QMainWindow):
 
         self._rotate_action = QAction("Rotar vista 90°", self)
         self._rotate_action.setShortcut(QKeySequence("Ctrl+R"))
-        self._rotate_action.triggered.connect(self.rotate_view)
+        self._rotate_action.triggered.connect(lambda: self.rotate_view(90))
 
         self._close_action = QAction("Cerrar documento", self)
         self._close_action.setShortcut(QKeySequence("Ctrl+W"))
@@ -667,8 +669,10 @@ class MainWindow(QMainWindow):
         if self._document is None or self._scheduler is None:
             return
 
-        scale = self._effective_scale()
-        self._status_zoom.setText(f"{scale * 100:.0f} %")
+        logical_scale = self._effective_scale()
+        pixel_ratio = self._render_pixel_ratio(logical_scale)
+        scale = logical_scale * pixel_ratio
+        self._status_zoom.setText(f"{logical_scale * 100:.0f} %")
 
         key = (self._page_index, round(scale, 4), self._view_rotation)
         cached = self._cache.get(key)
@@ -681,6 +685,37 @@ class MainWindow(QMainWindow):
             self._canvas.set_message("Renderizando página…")
         self._scheduler.request(self._page_index, scale, self._view_rotation)
 
+    def _pixel_ratio(self) -> float:
+        """Densidad de la pantalla, para renderizar con nitidez en HiDPI."""
+        ratio = self._canvas.devicePixelRatioF()
+        return ratio if ratio > 0 else 1.0
+
+    def _render_pixel_ratio(self, logical_scale: float) -> float:
+        """Densidad efectiva del render, recortada si no cabe en memoria.
+
+        En pantallas HiDPI el render se pide a ``escala lógica × densidad``. En
+        zooms altos eso puede superar el límite de píxeles, así que se reduce la
+        densidad lo justo para no fallar; la página se sigue viendo al tamaño
+        lógico correcto.
+        """
+        ratio = self._pixel_ratio()
+        if self._document is None or logical_scale <= 0:
+            return ratio
+        try:
+            width, height = self._page_info(self._page_index).rotated_size
+        except BeneError:
+            return ratio
+        width, height = rotated_size(width, height, self._view_rotation)
+        area = width * height
+        if area <= 0:
+            return ratio
+
+        # Margen del 0,1 % para que el redondeo en coma flotante no roce el límite.
+        budget_scale = math.sqrt(MAX_RENDER_PIXELS / area) * 0.999
+        if logical_scale * ratio > budget_scale:
+            ratio = max(1.0, budget_scale / logical_scale)
+        return ratio
+
     def _on_rendered(self, render: object) -> None:
         if not isinstance(render, RenderedPage):
             return
@@ -690,10 +725,13 @@ class MainWindow(QMainWindow):
 
         if render.page_index != self._page_index or render.rotation != self._view_rotation:
             return
-        if abs(render.scale - self._effective_scale()) > 0.01:
-            # El tamaño disponible cambió mientras se renderizaba (por ejemplo,
-            # al aparecer una barra de desplazamiento): se pide otra vez con la
-            # escala vigente para no quedarse en «Renderizando…».
+        logical_scale = self._effective_scale()
+        expected_scale = logical_scale * self._render_pixel_ratio(logical_scale)
+        if abs(render.scale - expected_scale) > 0.01:
+            # El tamaño disponible o la densidad de pantalla cambiaron mientras
+            # se renderizaba (por ejemplo, al aparecer una barra de
+            # desplazamiento): se pide otra vez con la escala vigente para no
+            # quedarse en «Renderizando…».
             self._request_render()
             return
 
@@ -707,7 +745,9 @@ class MainWindow(QMainWindow):
         QMessageBox.warning(self, APP_NAME, f"No se pudo renderizar la página.\n\n{error}")
 
     def _show_render(self, render: RenderedPage) -> None:
-        self._canvas.set_image(rendered_page_to_image(render))
+        logical_scale = self._effective_scale()
+        pixel_ratio = render.scale / logical_scale if logical_scale > 0 else 1.0
+        self._canvas.set_image(rendered_page_to_image(render, pixel_ratio=pixel_ratio))
         try:
             page_info = self._page_info(render.page_index)
         except BeneError:
@@ -718,7 +758,7 @@ class MainWindow(QMainWindow):
                 CoordinateMapper(
                     page_width=width,
                     page_height=height,
-                    scale=render.scale,
+                    scale=logical_scale,
                     view_rotation=render.rotation,
                 )
             )

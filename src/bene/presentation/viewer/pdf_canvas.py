@@ -36,14 +36,19 @@ PLACEHOLDER_MESSAGE = "Abre un PDF para empezar"
 SELECTION_COLOR = QColor("#3daee9")
 REGION_COLOR = QColor(61, 174, 233, 55)
 HANDLE_COLOR = QColor("#ffffff")
-HANDLE_SIZE: Final[int] = 8
-HANDLE_HIT_RADIUS: Final[float] = 9.0
+HANDLE_SIZE: Final[int] = 10
+HANDLE_HIT_RADIUS: Final[float] = 12.0
 MIN_OBJECT_SIZE: Final[float] = 4.0
 MIN_REGION_PIXELS: Final[float] = 3.0
 
 
-def rendered_page_to_image(render: RenderedPage) -> QImage:
-    """Convierte el DTO del puerto en un ``QImage`` que posee sus píxeles."""
+def rendered_page_to_image(render: RenderedPage, *, pixel_ratio: float = 1.0) -> QImage:
+    """Convierte el DTO del puerto en un ``QImage`` que posee sus píxeles.
+
+    ``pixel_ratio`` es la densidad de la pantalla: si el render se pidió a esa
+    densidad, marcarla en la imagen hace que Qt la dibuje a su tamaño lógico sin
+    perder nitidez en pantallas HiDPI.
+    """
     image = QImage(
         render.samples,
         render.width,
@@ -53,7 +58,10 @@ def rendered_page_to_image(render: RenderedPage) -> QImage:
     )
     # QImage no copia el búfer de bytes: hay que duplicarlo para que no dependa
     # de la vida del objeto Python.
-    return image.copy()
+    copied = image.copy()
+    if pixel_ratio > 0:
+        copied.setDevicePixelRatio(pixel_ratio)
+    return copied
 
 
 class CanvasTool(StrEnum):
@@ -135,7 +143,16 @@ class PdfCanvas(QWidget):
 
     def set_image(self, image: QImage | None) -> None:
         self._image = image
-        self.setFixedSize(image.size() if image is not None else PLACEHOLDER_SIZE)
+        if image is None:
+            self.setFixedSize(PLACEHOLDER_SIZE)
+        else:
+            ratio = image.devicePixelRatio() or 1.0
+            self.setFixedSize(
+                QSize(
+                    max(1, round(image.width() / ratio)),
+                    max(1, round(image.height() / ratio)),
+                )
+            )
         self.update()
 
     def set_message(self, message: str) -> None:
@@ -201,6 +218,9 @@ class PdfCanvas(QWidget):
             )
             return
 
+        # Las imágenes insertadas se dibujan escaladas; suavizarlas mantiene la
+        # calidad de la vista previa.
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
         painter.drawImage(0, 0, self._image)
         if self._mapper is None:
             return
@@ -301,15 +321,16 @@ class PdfCanvas(QWidget):
             self.placement_requested.emit(page_x, page_y)
             return
 
-        corner = self._handle_at(position)
-        if corner is not None:
-            obj = self._selected_object()
-            assert obj is not None
+        target = self._resize_target_at(position)
+        if target is not None:
+            target_object, corner = target
+            if target_object.object_id != self._selected_id:
+                self.select_object(target_object.object_id)
             self._drag_mode = "resize"
             self._resize_corner = corner
-            self._drag_object_id = obj.object_id
-            self._drag_original_rect = obj.rect
-            self._drag_preview_rect = obj.rect
+            self._drag_object_id = target_object.object_id
+            self._drag_original_rect = target_object.rect
+            self._drag_preview_rect = target_object.rect
             return
 
         obj = self._object_at(position)
@@ -329,6 +350,10 @@ class PdfCanvas(QWidget):
         if self._mapper is None:
             return
         position = event.position()
+
+        if self._drag_mode is None and self._tool is CanvasTool.SELECT:
+            self._update_hover_cursor(position)
+            return
 
         if self._drag_mode == "region" and self._region_view is not None:
             self._region_view = QRectF(self._drag_origin, position).normalized()
@@ -413,9 +438,8 @@ class PdfCanvas(QWidget):
                 return obj
         return None
 
-    def _handle_at(self, position: QPointF) -> int | None:
-        obj = self._selected_object()
-        if obj is None or self._mapper is None:
+    def _handle_at_object(self, obj: EditObject, position: QPointF) -> int | None:
+        if self._mapper is None:
             return None
         for index, corner in enumerate(self._page_corners(obj.rect)):
             x, y = self._mapper.to_view(*corner)
@@ -425,6 +449,40 @@ class PdfCanvas(QWidget):
             ):
                 return index
         return None
+
+    def _resize_target_at(self, position: QPointF) -> tuple[EditObject, int] | None:
+        """Busca un asa de redimensionado, primero en el objeto seleccionado.
+
+        Permite empezar a redimensionar con un solo clic, aunque el objeto aún
+        no estuviera seleccionado.
+        """
+        selected = self._selected_object()
+        candidates: list[EditObject] = []
+        if selected is not None:
+            candidates.append(selected)
+        candidates.extend(
+            obj for obj in reversed(self._objects) if obj.object_id != self._selected_id
+        )
+        for obj in candidates:
+            corner = self._handle_at_object(obj, position)
+            if corner is not None:
+                return obj, corner
+        return None
+
+    def _update_hover_cursor(self, position: QPointF) -> None:
+        target = self._resize_target_at(position)
+        if target is not None:
+            corner = target[1]
+            # Las esquinas 0 y 2 son la diagonal principal; 1 y 3, la inversa.
+            self.setCursor(
+                Qt.CursorShape.SizeFDiagCursor
+                if corner in (0, 2)
+                else Qt.CursorShape.SizeBDiagCursor
+            )
+        elif self._object_at(position) is not None:
+            self.setCursor(Qt.CursorShape.SizeAllCursor)
+        else:
+            self.unsetCursor()
 
     @staticmethod
     def _page_corners(rect: PdfRect) -> tuple[tuple[float, float], ...]:

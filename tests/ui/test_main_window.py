@@ -260,6 +260,19 @@ class TestRotacion:
             timeout=RENDER_TIMEOUT_MS,
         )
 
+    def test_la_accion_de_rotar_gira_la_vista(
+        self, qtbot: QtBot, window: MainWindow, tmp_path: Path
+    ) -> None:
+        open_ready(qtbot, window, tmp_path)
+        action = next(
+            action for action in window.findChildren(QAction) if action.text() == "Rotar vista 90°"
+        )
+
+        action.trigger()
+
+        assert window.view_rotation == 90
+        qtbot.waitUntil(lambda: window.activity == "Listo", timeout=RENDER_TIMEOUT_MS)
+
     def test_la_rotacion_es_modular(self, window: MainWindow, tmp_path: Path) -> None:
         assert window.open_path(write_pdf(tmp_path)) is True
 
@@ -269,6 +282,29 @@ class TestRotacion:
         assert window.view_rotation == 0
         window.rotate_view(-90)
         assert window.view_rotation == 270
+
+
+class TestHiDPI:
+    def test_renderiza_a_la_densidad_de_la_pantalla(
+        self,
+        qtbot: QtBot,
+        window: MainWindow,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(window, "_pixel_ratio", lambda: 2.0)
+
+        open_ready(qtbot, window, tmp_path)
+
+        image = window.canvas.image
+        mapper = window.canvas.mapper
+        assert image is not None
+        assert mapper is not None
+        assert image.devicePixelRatio() == pytest.approx(2.0)
+        # El render se pidió al doble de resolución, pero el lienzo y el mapper
+        # trabajan en píxeles lógicos.
+        assert image.width() / (595 * mapper.scale) == pytest.approx(2.0, rel=0.01)
+        assert window.canvas.width() == pytest.approx(595 * mapper.scale, rel=0.01)
 
 
 class TestCierre:

@@ -205,6 +205,36 @@ class TestTransformaciones:
 
         assert requests == [("texto-1", PdfRect(10, 20, 100, 90))]
 
+    def test_redimensiona_sin_seleccionar_antes(self, qtbot: QtBot) -> None:
+        """Un clic directo en el asa basta para empezar a redimensionar."""
+        canvas = make_canvas(qtbot)
+        canvas.set_objects([make_text()])
+        requests: list[tuple[str, PdfRect]] = []
+        canvas.transform_requested.connect(lambda oid, rect: requests.append((oid, rect)))
+
+        qtbot.mousePress(canvas, Qt.MouseButton.LeftButton, pos=QPoint(60, 80))
+        qtbot.mouseMove(canvas, QPoint(100, 90))
+        qtbot.mouseRelease(canvas, Qt.MouseButton.LeftButton, pos=QPoint(100, 90))
+
+        assert canvas.selected_object_id == "texto-1"
+        assert requests == [("texto-1", PdfRect(10, 20, 100, 90))]
+
+    def test_el_cursor_indica_redimensionado_en_las_esquinas(self, qtbot: QtBot) -> None:
+        canvas = make_canvas(qtbot)
+        canvas.set_objects([make_text()])
+
+        qtbot.mouseMove(canvas, QPoint(10, 20))
+        assert canvas.cursor().shape() is Qt.CursorShape.SizeFDiagCursor
+
+        qtbot.mouseMove(canvas, QPoint(60, 20))
+        assert canvas.cursor().shape() is Qt.CursorShape.SizeBDiagCursor
+
+        qtbot.mouseMove(canvas, QPoint(30, 40))
+        assert canvas.cursor().shape() is Qt.CursorShape.SizeAllCursor
+
+        qtbot.mouseMove(canvas, QPoint(150, 90))
+        assert canvas.cursor().shape() is Qt.CursorShape.ArrowCursor
+
     def test_redimensiona_con_rotacion(self, qtbot: QtBot) -> None:
         canvas = make_canvas(qtbot, rotation=90)
         canvas.set_objects([make_text()])

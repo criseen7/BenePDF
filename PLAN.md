@@ -248,6 +248,7 @@ EditorPDF-Local/
 | 2026-10-25 | Paso 2 completado: `CoordinateMapper` con zoom y las cuatro rotaciones, selección de región, dibujo de texto e imágenes, selección y transformación por arrastre en el lienzo. 47 pruebas nuevas, 303 en total. |
 | 2026-10-25 | Paso 5 completado: cargador secuencial de miniaturas en segundo plano, panel lateral navegable y cancelación al cerrar. 13 pruebas nuevas, 316 en total. |
 | 2026-10-25 | Pasos 3, 4 y 6 completados: diálogo de texto, panel de propiedades, carga validada de PNG/JPEG, integración de todas las acciones de edición en la ventana principal, deshacer/rehacer, aviso de cambios sin exportar y smoke real con PyMuPDF. 34 pruebas nuevas, 350 en total. El render se repite si la escala cambia mientras está en curso para no quedarse en «Renderizando…». |
+| 2026-10-26 | Correcciones de la iteración 2: el render usa la densidad de la pantalla (HiDPI) y reduce la densidad si el zoom agotaría el límite de memoria; el redimensionado funciona con un clic directo en el asa y muestra cursores adecuados; la acción «Rotar vista 90°» vuelve a girar la página. 7 pruebas nuevas, 358 en total. |
 
 ## 10. Notas de entorno
 
