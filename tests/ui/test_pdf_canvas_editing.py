@@ -205,24 +205,51 @@ class TestTransformaciones:
 
         assert requests == [("texto-1", PdfRect(10, 20, 100, 90))]
 
-    def test_redimensiona_sin_seleccionar_antes(self, qtbot: QtBot) -> None:
-        """Un clic directo en el asa basta para empezar a redimensionar."""
+    def test_arrastrar_el_cuerpo_cerca_de_una_esquina_no_redimensiona(self, qtbot: QtBot) -> None:
+        """Arrastrar dentro del objeto siempre mueve, aunque se coja cerca del asa."""
+        canvas = make_canvas(qtbot)
+        canvas.set_objects([make_text()])
+        canvas.select_object("texto-1")
+        requests: list[tuple[str, PdfRect]] = []
+        canvas.transform_requested.connect(lambda oid, rect: requests.append((oid, rect)))
+
+        # (52, 72) está dentro del objeto y a 8 px de la esquina (60, 80),
+        # fuera del asa visible.
+        qtbot.mousePress(canvas, Qt.MouseButton.LeftButton, pos=QPoint(52, 72))
+        qtbot.mouseMove(canvas, QPoint(72, 82))
+        qtbot.mouseRelease(canvas, Qt.MouseButton.LeftButton, pos=QPoint(72, 82))
+
+        assert requests == [("texto-1", PdfRect(30, 30, 80, 90))]
+
+    def test_las_asas_solo_actuan_con_el_objeto_seleccionado(self, qtbot: QtBot) -> None:
         canvas = make_canvas(qtbot)
         canvas.set_objects([make_text()])
         requests: list[tuple[str, PdfRect]] = []
         canvas.transform_requested.connect(lambda oid, rect: requests.append((oid, rect)))
 
+        # Primer clic en la esquina: solo selecciona.
+        qtbot.mouseClick(canvas, Qt.MouseButton.LeftButton, pos=QPoint(60, 80))
+        assert canvas.selected_object_id == "texto-1"
+        assert requests == []
+
+        # Con el objeto ya seleccionado, el asa sí redimensiona.
         qtbot.mousePress(canvas, Qt.MouseButton.LeftButton, pos=QPoint(60, 80))
         qtbot.mouseMove(canvas, QPoint(100, 90))
         qtbot.mouseRelease(canvas, Qt.MouseButton.LeftButton, pos=QPoint(100, 90))
 
-        assert canvas.selected_object_id == "texto-1"
         assert requests == [("texto-1", PdfRect(10, 20, 100, 90))]
 
-    def test_el_cursor_indica_redimensionado_en_las_esquinas(self, qtbot: QtBot) -> None:
+    def test_el_cursor_indica_redimensionado_solo_al_objeto_seleccionado(
+        self, qtbot: QtBot
+    ) -> None:
         canvas = make_canvas(qtbot)
         canvas.set_objects([make_text()])
 
+        # Sin seleccionar, incluso sobre una esquina, se puede mover.
+        qtbot.mouseMove(canvas, QPoint(60, 20))
+        assert canvas.cursor().shape() is Qt.CursorShape.SizeAllCursor
+
+        canvas.select_object("texto-1")
         qtbot.mouseMove(canvas, QPoint(10, 20))
         assert canvas.cursor().shape() is Qt.CursorShape.SizeFDiagCursor
 

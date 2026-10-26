@@ -37,7 +37,9 @@ SELECTION_COLOR = QColor("#3daee9")
 REGION_COLOR = QColor(61, 174, 233, 55)
 HANDLE_COLOR = QColor("#ffffff")
 HANDLE_SIZE: Final[int] = 10
-HANDLE_HIT_RADIUS: Final[float] = 12.0
+# Poco más que el asa dibujada: si el radio es grande, arrastrar el cuerpo
+# cerca de una esquina se confunde con un redimensionado.
+HANDLE_HIT_RADIUS: Final[float] = 7.0
 MIN_OBJECT_SIZE: Final[float] = 4.0
 MIN_REGION_PIXELS: Final[float] = 3.0
 
@@ -321,16 +323,15 @@ class PdfCanvas(QWidget):
             self.placement_requested.emit(page_x, page_y)
             return
 
-        target = self._resize_target_at(position)
+        target = self._handle_at(position)
         if target is not None:
-            target_object, corner = target
-            if target_object.object_id != self._selected_id:
-                self.select_object(target_object.object_id)
+            obj = self._selected_object()
+            assert obj is not None
             self._drag_mode = "resize"
-            self._resize_corner = corner
-            self._drag_object_id = target_object.object_id
-            self._drag_original_rect = target_object.rect
-            self._drag_preview_rect = target_object.rect
+            self._resize_corner = target
+            self._drag_object_id = obj.object_id
+            self._drag_original_rect = obj.rect
+            self._drag_preview_rect = obj.rect
             return
 
         obj = self._object_at(position)
@@ -450,29 +451,20 @@ class PdfCanvas(QWidget):
                 return index
         return None
 
-    def _resize_target_at(self, position: QPointF) -> tuple[EditObject, int] | None:
-        """Busca un asa de redimensionado, primero en el objeto seleccionado.
+    def _handle_at(self, position: QPointF) -> int | None:
+        """Asa de la selección bajo el puntero, si la hay.
 
-        Permite empezar a redimensionar con un solo clic, aunque el objeto aún
-        no estuviera seleccionado.
+        Solo las asas visibles del objeto seleccionado son interactivas: así
+        arrastrar el cuerpo nunca redimensiona por accidente.
         """
-        selected = self._selected_object()
-        candidates: list[EditObject] = []
-        if selected is not None:
-            candidates.append(selected)
-        candidates.extend(
-            obj for obj in reversed(self._objects) if obj.object_id != self._selected_id
-        )
-        for obj in candidates:
-            corner = self._handle_at_object(obj, position)
-            if corner is not None:
-                return obj, corner
-        return None
+        obj = self._selected_object()
+        if obj is None:
+            return None
+        return self._handle_at_object(obj, position)
 
     def _update_hover_cursor(self, position: QPointF) -> None:
-        target = self._resize_target_at(position)
-        if target is not None:
-            corner = target[1]
+        corner = self._handle_at(position)
+        if corner is not None:
             # Las esquinas 0 y 2 son la diagonal principal; 1 y 3, la inversa.
             self.setCursor(
                 Qt.CursorShape.SizeFDiagCursor

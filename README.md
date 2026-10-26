@@ -59,7 +59,7 @@ Los cambios se guardan **solo en memoria** durante la sesión: el PDF original n
 1. **Seleccionar región** (`Ctrl+Shift+R`): arrastra sobre la página para marcar un rectángulo. La barra de estado muestra sus coordenadas y tamaño en puntos PDF.
 2. **Añadir texto** (`Ctrl+T`): escribe el contenido y elige fuente, tamaño, color y alineación. Si hay una región seleccionada, el texto ocupa esa región; si no, la herramienta queda activa y el texto se coloca con un clic.
 3. **Insertar imagen** (`Ctrl+I`): admite PNG y JPEG de hasta 20 MB. Igual que el texto, usa la región seleccionada o el siguiente clic. La imagen se ajusta a la proporción original.
-4. **Mover y redimensionar**: con la herramienta **Seleccionar** (`Ctrl+Shift+V`), haz clic en un objeto para seleccionarlo, arrástralo para moverlo o usa las asas de las esquinas para cambiar su tamaño. También puedes empezar a redimensionar con un clic directo en el asa, sin seleccionar antes; el cursor cambia al acercarte a una esquina. El panel **Propiedades** permite introducir X, Y, ancho y alto en puntos PDF.
+4. **Mover y redimensionar**: con la herramienta **Seleccionar** (`Ctrl+Shift+V`), haz clic en un objeto para seleccionarlo. Con el objeto seleccionado, arrastra desde su cuerpo para moverlo o desde las asas de las esquinas para cambiar su tamaño; el cursor cambia al acercarte a cada zona. El panel **Propiedades** permite introducir X, Y, ancho y alto en puntos PDF.
 5. **Eliminar** (`Supr`): borra el objeto seleccionado.
 6. **Deshacer / Rehacer** (`Ctrl+Z` / `Ctrl+Y`): recorre el historial completo de la sesión.
 
