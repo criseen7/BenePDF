@@ -16,14 +16,14 @@ Aplicar cada edición directamente al documento en memoria tiene dos problemas:
 
 La sesión de edición se modela como una **lista ordenada de comandos inmutables** sobre un documento que permanece intacto:
 
-- `AddTextCommand`, `MoveObjectCommand`, `ResizeObjectCommand`, `AddImageCommand`, `RedactRegionCommand`.
+- `AddTextCommand`, `MoveObjectCommand`, `ResizeObjectCommand`, `AddImageCommand`, `AddRedactionCommand`.
 - Cada comando contiene índice de página, coordenadas en puntos PDF (origen arriba-izquierda) y sus parámetros.
 - El índice del historial define qué comandos están activos; deshacer y rehacer solo mueven ese índice.
 - **Vista previa:** se renderiza la página base con PyMuPDF y se dibujan encima los comandos activos con `QPainter`. Es rápida y suficiente para colocar y mover elementos.
 - **Vista previa exacta:** a petición, se aplican los comandos a una copia en memoria del documento y se renderiza el resultado real. Sirve para comprobar tipografías y redacciones antes de exportar.
 - **Exportación:** se aplican todos los comandos activos a una copia, se escribe a un archivo temporal, se reabre y valida, y solo entonces se reemplaza el destino de forma atómica.
 
-La redacción nunca se simula al exportar: `RedactRegionCommand` ejecuta `add_redact_annot()` + `apply_redactions()` sobre la copia.
+La redacción nunca se simula al exportar: `AddRedactionCommand` ejecuta `add_redact_annot()` + `apply_redactions()` sobre la copia.
 
 ## Consecuencias
 

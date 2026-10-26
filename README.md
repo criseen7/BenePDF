@@ -2,7 +2,7 @@
 
 Aplicación de escritorio para visualizar, organizar y editar documentos PDF sin subir nada a servicios externos.
 
-El proyecto está en fase de construcción: la iteración 1 cubre apertura, visualización, navegación, zoom, rotación de vista y detección de páginas escaneadas. La iteración 2 añade miniaturas, selección de región, texto e imágenes, transformaciones y deshacer/rehacer, todo en memoria. La exportación y la redacción permanente llegan en la iteración 3.
+El proyecto está en fase de construcción: la iteración 1 cubre apertura, visualización, navegación, zoom, rotación de vista y detección de páginas escaneadas. La iteración 2 añade miniaturas, selección de región, texto e imágenes, transformaciones y deshacer/rehacer, todo en memoria. La iteración 3 añade redacción permanente y exportación segura a un archivo nuevo.
 
 - Requisitos y criterios de aceptación: [docs/requirements.md](docs/requirements.md)
 - Plan de trabajo y estado: [PLAN.md](PLAN.md)
@@ -54,16 +54,28 @@ Los renders se hacen en segundo plano: mientras se prepara una página verás **
 
 ### Editar el documento
 
-Los cambios se guardan **solo en memoria** durante la sesión: el PDF original nunca se modifica. La exportación llegará en la iteración 3.
+Los cambios se guardan **solo en memoria** durante la sesión: el PDF original nunca se modifica. Cuando termines, expórtalos a un archivo nuevo.
 
 1. **Seleccionar región** (`Ctrl+Shift+R`): arrastra sobre la página para marcar un rectángulo. La barra de estado muestra sus coordenadas y tamaño en puntos PDF.
-2. **Añadir texto** (`Ctrl+T`): escribe el contenido y elige fuente, tamaño, color y alineación. Si hay una región seleccionada, el texto ocupa esa región; si no, la herramienta queda activa y el texto se coloca con un clic.
-3. **Insertar imagen** (`Ctrl+I`): admite PNG y JPEG de hasta 20 MB. Igual que el texto, usa la región seleccionada o el siguiente clic. La imagen se ajusta a la proporción original.
-4. **Mover y redimensionar**: con la herramienta **Seleccionar** (`Ctrl+Shift+V`), haz clic en un objeto para seleccionarlo. Con el objeto seleccionado, arrastra desde su cuerpo para moverlo o desde las asas de las esquinas para cambiar su tamaño; el cursor cambia al acercarte a cada zona. El panel **Propiedades** permite introducir X, Y, ancho y alto en puntos PDF.
-5. **Eliminar** (`Supr`): borra el objeto seleccionado.
-6. **Deshacer / Rehacer** (`Ctrl+Z` / `Ctrl+Y`): recorre el historial completo de la sesión.
+2. **Redactar región** (`Ctrl+Shift+X`): arrastra sobre el contenido que quieras eliminar. Se pide confirmación porque, al exportar, el contenido subyacente se borra de forma permanente del archivo nuevo. La región se muestra en negro y se puede mover, redimensionar o eliminar como cualquier otro objeto antes de exportar.
+3. **Añadir texto** (`Ctrl+T`): escribe el contenido y elige fuente, tamaño, color y alineación. Si hay una región seleccionada, el texto ocupa esa región; si no, la herramienta queda activa y el texto se coloca con un clic. Puedes redactar una zona y escribir el texto corregido encima en el mismo paso.
+4. **Insertar imagen** (`Ctrl+I`): admite PNG y JPEG de hasta 20 MB. Igual que el texto, usa la región seleccionada o el siguiente clic. La imagen se ajusta a la proporción original.
+5. **Mover y redimensionar**: con la herramienta **Seleccionar** (`Ctrl+Shift+V`), haz clic en un objeto para seleccionarlo. Con el objeto seleccionado, arrastra desde su cuerpo para moverlo o desde las asas de las esquinas para cambiar su tamaño; el cursor cambia al acercarte a cada zona. El panel **Propiedades** permite introducir X, Y, ancho y alto en puntos PDF.
+6. **Eliminar** (`Supr`): borra el objeto seleccionado.
+7. **Deshacer / Rehacer** (`Ctrl+Z` / `Ctrl+Y`): recorre el historial completo de la sesión, incluidas las redacciones.
 
-La barra de estado muestra **Cambios sin exportar** cuando hay ediciones activas. Al cerrar el documento, abrir otro PDF o salir, la aplicación pide confirmación antes de descartarlas.
+La barra de estado muestra **Cambios sin exportar** cuando hay ediciones activas. Al cerrar el documento, abrir otro PDF o salir, la aplicación ofrece **Guardar**, **Descartar** o **Cancelar**.
+
+### Exportar el resultado
+
+1. Pulsa **Exportar como…** (`Ctrl+Shift+S`) o usa Archivo → Exportar como…
+2. Elige un nombre y una carpeta distintos del PDF original. La aplicación rechaza guardar sobre el original.
+3. Si hay redacciones, confirma que se aplicarán de forma permanente.
+4. Bene PDF escribe primero en un archivo temporal, lo reabre para validarlo y solo entonces reemplaza el destino. Si algo falla, el archivo original y el destino anterior quedan intactos.
+
+El archivo exportado puede abrirse de nuevo y contiene el texto, las imágenes y las redacciones aplicadas. La redacción elimina el texto subyacente (no solo lo tapa) y, en páginas escaneadas, borra únicamente los píxeles de la región marcada.
+
+Los PDF cifrados no se pueden exportar en esta iteración: PyMuPDF necesitaría la contraseña de propietario para conservar la protección y la aplicación no la solicita ni la guarda. La acción **Exportar como…** aparece deshabilitada para esos documentos.
 
 ### Zoom y ajuste
 
@@ -100,8 +112,10 @@ Pulsa **Rotar vista 90°** o `Ctrl+R` para girar la página en pantalla 90° en 
 | Rotar vista 90° | `Ctrl+R` |
 | Herramienta seleccionar | `Ctrl+Shift+V` |
 | Seleccionar región | `Ctrl+Shift+R` |
+| Redactar región | `Ctrl+Shift+X` |
 | Añadir texto | `Ctrl+T` |
 | Insertar imagen | `Ctrl+I` |
+| Exportar como… | `Ctrl+Shift+S` |
 | Deshacer | `Ctrl+Z` |
 | Rehacer | `Ctrl+Y` |
 | Eliminar objeto | `Supr` |
@@ -119,10 +133,12 @@ El registro rota a 2 MB, conserva tres copias y nunca contiene el texto del docu
 
 ### Limitaciones de esta iteración
 
-- Los cambios de edición viven solo en memoria: todavía no se pueden exportar ni guardar. El PDF original nunca se modifica.
-- No hay redacción permanente, búsqueda, OCR ni impresión; llegan en la iteración 3 o más adelante.
+- Los cambios de edición viven en memoria hasta que se exportan; el PDF original nunca se modifica.
+- Los PDF cifrados no se pueden exportar mientras conserven la protección.
+- No hay búsqueda, OCR ni impresión; llegan en iteraciones posteriores.
 - Las miniaturas y los renders se generan a partir del PDF original, así que las ediciones no aparecen en ellas.
 - La rotación de vista no se guarda en el archivo.
+- La redacción puede afectar a objetos que se solapen con la región marcada; revísala antes de exportar.
 - Si una página concreta no se puede renderizar, se muestra un aviso y el detalle queda en el registro.
 
 ## Comandos

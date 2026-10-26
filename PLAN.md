@@ -1,7 +1,7 @@
 # PLAN — Bene PDF
 
-- **Estado:** iteración 2 implementada y verificada en modo offscreen
-- **Última actualización:** 2026-10-25
+- **Estado:** iteración 3 implementada y verificada en modo offscreen
+- **Última actualización:** 2026-10-26
 - **Especificación de referencia:** [docs/requirements.md](docs/requirements.md)
 
 ## 1. Decisiones adoptadas
@@ -15,6 +15,7 @@
 | Motor PDF | PyMuPDF 2.0 (`pymupdf`) tras el puerto `PdfEngine` | Render, inserción de texto e imágenes y redacción real con una sola dependencia |
 | Modelo de edición | Comandos inmutables en memoria; el PDF fuente nunca se modifica | Deshacer/rehacer correcto y cumplimiento de RN-001 y RN-008 |
 | Persistencia | Nada se guarda hasta exportar; la exportación escribe a temporal y valida | Integridad del archivo original (RNF-005) |
+| Redacción | Se aplica antes que el contenido nuevo; texto y vectores se eliminan, las imágenes se redactan por píxeles | Permite «redactar y escribir encima» sin destruir escaneos completos (RN-004, RNF-008) |
 | Miniaturas | Iteración 2 | Mantener la primera iteración pequeña y verificable |
 
 Las decisiones con consecuencias arquitectónicas se documentan en `docs/decisions/`.
@@ -166,7 +167,52 @@ Además del smoke test automático, se ejecutó la aplicación real en modo offs
 - [x] Smoke real offscreen con PyMuPDF: miniaturas, texto, imagen y deshacer
 - [x] README y bitácora actualizados
 
-## 4. Estructura objetivo
+## 4. Iteración 3 — redacción y exportación segura
+
+**Objetivo verificable:** marcar regiones de redacción con confirmación, exportar los cambios a un archivo nuevo sin tocar el original y comprobar por extracción de texto que el contenido redactado ya no existe.
+
+### Paso 1 — Modelo y sesión
+
+- [x] `RedactionObject` y `AddRedactionCommand` en el modelo inmutable
+- [x] `EditSession.add_redaction` y reutilización de mover/redimensionar/eliminar
+- [x] Estado limpio comparando la tupla de comandos activos, no solo su cantidad
+- [x] Pruebas de redacciones, deshacer/rehacer y `mark_saved`
+
+### Paso 2 — Lienzo y propiedades
+
+- [x] `CanvasTool.REDACT` con arrastre y señal `redaction_requested`
+- [x] Vista previa de la región en negro con borde discontinuo
+- [x] Selección, asas, movimiento y eliminación de redacciones como cualquier objeto
+- [x] Panel de propiedades con título y aviso de eliminación permanente
+
+### Paso 3 — Exportación
+
+- [x] `ExportError`, `OpenedDocument.export_to` y caso de uso `ExportDocument`
+- [x] Rechazo del destino igual al original en el caso de uso y en el adaptador
+- [x] Copia limpia del original, archivo temporal en el mismo directorio y `Path.replace()`
+- [x] Redacciones antes que textos e imágenes; contenido nuevo encima de la zona redactada
+- [x] Conversión de coordenadas visibles a sin rotar y orientación correcta en las cuatro rotaciones
+- [x] Redacción de imágenes por píxeles para conservar el resto del escaneo
+- [x] Validación reabriendo el temporal: PDF, número de páginas y ausencia de anotaciones de redacción
+- [x] Rechazo explícito de PDF cifrados, sin guardar contraseñas
+
+### Paso 4 — Interfaz
+
+- [x] Acción **Redactar región** (`Ctrl+Shift+X`) y confirmación al marcar
+- [x] Acción **Exportar como…** (`Ctrl+Shift+S`) y confirmación al aplicar redacciones
+- [x] Aviso **Guardar / Descartar / Cancelar** al cerrar, abrir otro documento o salir
+- [x] Estado limpio tras exportar y acción deshabilitada para PDF cifrados
+- [x] Resumen de la exportación en la barra de estado
+
+### Paso 5 — Verificación
+
+- [x] Pruebas unitarias de dominio, sesión y caso de uso
+- [x] Pruebas de integración con PyMuPDF: no extracción, rotaciones, escaneos, imágenes y temporales
+- [x] Pruebas de interfaz y smoke real con redacción y exportación
+- [x] `ruff` y `mypy` sin errores
+- [x] README, PLAN y ADR-003 actualizados
+
+## 5. Estructura objetivo
 
 ```text
 EditorPDF-Local/
@@ -200,7 +246,7 @@ EditorPDF-Local/
     └── fixtures/
 ```
 
-## 5. Criterios de verificación de la iteración 1
+## 6. Criterios de verificación de la iteración 1
 
 1. `pytest` en verde en Windows (unitarias, integración y UI offscreen).
 2. `ruff check` y `ruff format --check` sin errores.
@@ -209,7 +255,7 @@ EditorPDF-Local/
 5. PDF corrupto, cifrado y escaneado: mensajes claros y sin cierre inesperado.
 6. El log existe, rota y no contiene texto del documento.
 
-## 6. Criterios de verificación de la iteración 2
+## 7. Criterios de verificación de la iteración 2
 
 1. Las cuatro rotaciones de vista convierten pantalla ↔ PDF sin desfases y la ida y vuelta conserva el punto.
 2. Se puede añadir, mover, redimensionar y eliminar texto e imágenes con la vista previa actualizada.
@@ -218,7 +264,18 @@ EditorPDF-Local/
 5. El PDF original no se modifica y no se escribe ningún archivo.
 6. `pytest`, `ruff` y `mypy` en verde y smoke real offscreen correcto.
 
-## 7. Riesgos abiertos
+## 8. Criterios de verificación de la iteración 3
+
+1. El texto de una región redactada no se puede extraer del archivo exportado.
+2. El PDF original conserva exactamente sus bytes y nunca se sobrescribe.
+3. La exportación escribe a un temporal, lo valida y no deja restos si falla.
+4. Las redacciones y los elementos nuevos se colocan correctamente en páginas con `/Rotate`.
+5. Se puede redactar y escribir texto nuevo en la misma región.
+6. En un escaneo, la redacción elimina solo la región y conserva el resto de la imagen.
+7. Los PDF cifrados se rechazan de forma explícita y no se degrada su protección.
+8. `pytest`, `ruff` y `mypy` en verde y smoke real offscreen correcto.
+
+## 9. Riesgos abiertos
 
 | Riesgo | Impacto | Mitigación |
 |---|---|---|
@@ -227,16 +284,16 @@ EditorPDF-Local/
 | Redacción puede eliminar objetos solapados | Alto | Vista previa con la zona marcada, confirmación explícita y pruebas con objetos cercanos |
 | Rendimiento en PDF escaneados de gran tamaño | Medio | Render bajo demanda, caché acotada y tareas en segundo plano |
 
-## 8. Backlog posterior
+## 10. Backlog posterior
 
 | Iteración | Contenido |
 |---|---|
 | 2 | Miniaturas, selección de región, conversión de coordenadas, añadir texto e imágenes, mover/redimensionar, historial deshacer/rehacer |
-| 3 | Redacción permanente con confirmación, exportación a temporal con validación y pruebas de no extracción |
+| 3 | **Completada:** redacción permanente con confirmación, exportación atómica a un archivo nuevo y pruebas de no extracción |
 | 4 | Mensajes de error, accesibilidad, PDFs rotados y grandes, empaquetado con PyInstaller |
 | 5 | OCR local opcional, búsqueda, operaciones de páginas |
 
-## 9. Bitácora
+## 11. Bitácora
 
 | Fecha | Avance |
 |---|---|
@@ -250,8 +307,11 @@ EditorPDF-Local/
 | 2026-10-25 | Pasos 3, 4 y 6 completados: diálogo de texto, panel de propiedades, carga validada de PNG/JPEG, integración de todas las acciones de edición en la ventana principal, deshacer/rehacer, aviso de cambios sin exportar y smoke real con PyMuPDF. 34 pruebas nuevas, 350 en total. El render se repite si la escala cambia mientras está en curso para no quedarse en «Renderizando…». |
 | 2026-10-26 | Correcciones de la iteración 2: el render usa la densidad de la pantalla (HiDPI) y reduce la densidad si el zoom agotaría el límite de memoria; el redimensionado funciona al arrastrar las asas visibles y muestra cursores adecuados; la acción «Rotar vista 90°» vuelve a girar la página. 7 pruebas nuevas, 358 en total. |
 | 2026-10-26 | Ajuste del redimensionado: solo las asas visibles del objeto seleccionado cambian su tamaño; arrastrar el cuerpo siempre mueve, incluso cerca de una esquina. 1 prueba nueva, 359 en total. |
+| 2026-10-26 | Iteración 3, pasos 1 y 2: `RedactionObject` y `AddRedactionCommand`, estado limpio por tupla de comandos, herramienta **Redactar región**, vista previa en negro y panel de propiedades. Pruebas de dominio, sesión, lienzo y panel. |
+| 2026-10-26 | Iteración 3, paso 3: `ExportError`, `export_to`, caso de uso `ExportDocument`, copia limpia, temporal validado y reemplazo atómico. Redacciones antes del contenido nuevo, coordenadas rotadas y rechazo explícito de PDF cifrados. Pruebas de integración de no extracción, rotaciones, escaneos, imágenes y temporales. |
+| 2026-10-26 | Iteración 3, pasos 4 y 5: acciones Exportar/Redactar, confirmaciones al marcar y al exportar, aviso Guardar/Descartar/Cancelar y estado limpio. Smoke real con redacción y exportación. README, PLAN y ADR-003 actualizados. 403 pruebas en verde. |
 
-## 10. Notas de entorno
+## 12. Notas de entorno
 
 - El paquete y el comando se llaman `bene`. El bloque de estructura de `docs/requirements.md` todavía usa `pdf-studio-local`/`pdf_studio` porque es el documento original del usuario; este plan y el código usan `bene`.
 - **Desviación del plan original:** las rutas se calculan con la biblioteca estándar (`LOCALAPPDATA` en Windows; `XDG_DATA_HOME`/`XDG_STATE_HOME` en Linux) y no con `QStandardPaths`. Motivo: mantener `config.py`, el registro y `bootstrap.py` libres de Qt, de modo que se puedan probar sin `QApplication` y que el arranque no dependa de la inicialización gráfica. En Windows la ubicación es la misma que daría Qt: `%LOCALAPPDATA%\bene-pdf`.
