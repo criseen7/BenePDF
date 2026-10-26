@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from bene.domain.editing import EditObject, ImageObject, TextObject
+from bene.domain.editing import EditObject, ImageObject, RedactionObject, TextObject
 from bene.domain.models import PdfRect
 
 MAX_COORDINATE: float = 100_000.0
@@ -78,13 +78,20 @@ class ObjectPropertiesPanel(QWidget):
             self.set_geometry(PdfRect(0, 0, 1, 1))
             return
 
-        self._title.setText("Texto añadido" if isinstance(obj, TextObject) else "Imagen añadida")
         if isinstance(obj, TextObject):
+            self._title.setText("Texto añadido")
             self._preview.setText(obj.text)
             self._preview.setVisible(True)
         elif isinstance(obj, ImageObject):
+            self._title.setText("Imagen añadida")
             self._preview.setText(f"Archivo: {obj.source_path.name}" if obj.source_path else "")
             self._preview.setVisible(bool(self._preview.text()))
+        elif isinstance(obj, RedactionObject):
+            self._title.setText("Redacción")
+            self._preview.setText(
+                "El contenido de esta región se eliminará de forma permanente al exportar."
+            )
+            self._preview.setVisible(True)
         self.set_geometry(obj.rect)
 
     def set_geometry(self, rect: PdfRect) -> None:

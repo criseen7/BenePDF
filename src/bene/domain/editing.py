@@ -107,7 +107,23 @@ class ImageObject:
             raise ValueError(f"Tipo de imagen no soportado: {self.mime_type}")
 
 
-EditObject = TextObject | ImageObject
+@dataclass(frozen=True, slots=True)
+class RedactionObject:
+    """Región marcada para eliminar de forma permanente al exportar.
+
+    La vista previa la dibuja el lienzo; el contenido subyacente solo
+    desaparece cuando se materializa la exportación (RN-003, RNF-008).
+    """
+
+    object_id: str
+    page_index: int
+    rect: PdfRect
+
+    def __post_init__(self) -> None:
+        _validate_identity(self.object_id, self.page_index, self.rect)
+
+
+EditObject = TextObject | ImageObject | RedactionObject
 
 
 @dataclass(frozen=True, slots=True)
@@ -122,6 +138,13 @@ class AddImageCommand:
     """Añade una imagen."""
 
     image_object: ImageObject
+
+
+@dataclass(frozen=True, slots=True)
+class AddRedactionCommand:
+    """Marca una región para redactarla al exportar."""
+
+    redaction_object: RedactionObject
 
 
 @dataclass(frozen=True, slots=True)
@@ -172,7 +195,12 @@ def _validate_transform(object_id: str, page_index: int, rect: PdfRect) -> None:
 
 
 EditCommand = (
-    AddTextCommand | AddImageCommand | MoveObjectCommand | ResizeObjectCommand | DeleteObjectCommand
+    AddTextCommand
+    | AddImageCommand
+    | AddRedactionCommand
+    | MoveObjectCommand
+    | ResizeObjectCommand
+    | DeleteObjectCommand
 )
 
 
@@ -188,6 +216,8 @@ def apply_command(objects: Mapping[str, EditObject], command: EditCommand) -> di
         _add(updated, command.text_object)
     elif isinstance(command, AddImageCommand):
         _add(updated, command.image_object)
+    elif isinstance(command, AddRedactionCommand):
+        _add(updated, command.redaction_object)
     elif isinstance(command, (MoveObjectCommand, ResizeObjectCommand)):
         current = _require(updated, command.object_id)
         if current.page_index != command.page_index:

@@ -24,7 +24,13 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import QWidget
 
 from bene.application.ports.pdf_engine import RenderedPage
-from bene.domain.editing import EditObject, ImageObject, TextAlignment, TextObject
+from bene.domain.editing import (
+    EditObject,
+    ImageObject,
+    RedactionObject,
+    TextAlignment,
+    TextObject,
+)
 from bene.domain.models import PdfRect
 from bene.presentation.viewer.coordinates import CoordinateMapper
 
@@ -35,6 +41,8 @@ PLACEHOLDER_MESSAGE = "Abre un PDF para empezar"
 
 SELECTION_COLOR = QColor("#3daee9")
 REGION_COLOR = QColor(61, 174, 233, 55)
+REDACTION_COLOR = QColor(16, 16, 16, 200)
+REDACTION_BORDER = QColor("#e5534b")
 HANDLE_COLOR = QColor("#ffffff")
 HANDLE_SIZE: Final[int] = 10
 # Poco más que el asa dibujada: si el radio es grande, arrastrar el cuerpo
@@ -71,6 +79,7 @@ class CanvasTool(StrEnum):
 
     SELECT = "select"
     REGION = "region"
+    REDACT = "redact"
     PLACE = "place"
 
 
@@ -78,6 +87,7 @@ class PdfCanvas(QWidget):
     """Muestra una página y permite seleccionar y transformar objetos."""
 
     region_selected = Signal(object)  # PdfRect
+    redaction_requested = Signal(object)  # PdfRect
     selection_changed = Signal(object)  # str | None
     transform_requested = Signal(str, object)  # (object_id, PdfRect)
     placement_requested = Signal(float, float)  # (page_x, page_y)
@@ -253,6 +263,15 @@ class PdfCanvas(QWidget):
                 )
             else:
                 painter.drawImage(view_rect, image)
+        elif isinstance(obj, RedactionObject):
+            self._paint_redaction(painter, view_rect)
+
+    @staticmethod
+    def _paint_redaction(painter: QPainter, view_rect: QRectF) -> None:
+        painter.fillRect(view_rect, REDACTION_COLOR)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(REDACTION_BORDER, 1, Qt.PenStyle.DashLine))
+        painter.drawRect(view_rect)
 
     def _paint_text(self, painter: QPainter, obj: TextObject, view_rect: QRectF) -> None:
         mapper = self._mapper
@@ -311,8 +330,8 @@ class PdfCanvas(QWidget):
             return
 
         position = event.position()
-        if self._tool is CanvasTool.REGION:
-            self._drag_mode = "region"
+        if self._tool in (CanvasTool.REGION, CanvasTool.REDACT):
+            self._drag_mode = "redact" if self._tool is CanvasTool.REDACT else "region"
             self._drag_origin = position
             self._region_view = QRectF(position, position)
             self.update()
@@ -356,7 +375,7 @@ class PdfCanvas(QWidget):
             self._update_hover_cursor(position)
             return
 
-        if self._drag_mode == "region" and self._region_view is not None:
+        if self._drag_mode in ("region", "redact") and self._region_view is not None:
             self._region_view = QRectF(self._drag_origin, position).normalized()
             self.update()
             return
@@ -384,7 +403,7 @@ class PdfCanvas(QWidget):
         if event.button() != Qt.MouseButton.LeftButton:
             return
 
-        if self._drag_mode == "region":
+        if self._drag_mode in ("region", "redact"):
             self._finish_region()
         elif self._drag_mode in ("move", "resize"):
             self._finish_transform()
@@ -402,13 +421,18 @@ class PdfCanvas(QWidget):
         if self._mapper is None or self._region_view is None:
             return
         view = self._region_view
+        is_redaction = self._drag_mode == "redact"
         if view.width() < MIN_REGION_PIXELS or view.height() < MIN_REGION_PIXELS:
             self._region = None
         else:
             self._region = self._mapper.rect_to_page(
                 view.left(), view.top(), view.right(), view.bottom()
             )
-            self.region_selected.emit(self._region)
+            if is_redaction:
+                self.redaction_requested.emit(self._region)
+                self._region = None
+            else:
+                self.region_selected.emit(self._region)
         self._region_view = None
 
     def _finish_transform(self) -> None:

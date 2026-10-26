@@ -9,11 +9,13 @@ import pytest
 
 from bene.domain.editing import (
     AddImageCommand,
+    AddRedactionCommand,
     AddTextCommand,
     DeleteObjectCommand,
     EditObject,
     ImageObject,
     MoveObjectCommand,
+    RedactionObject,
     ResizeObjectCommand,
     TextAlignment,
     TextObject,
@@ -100,6 +102,14 @@ class TestObjetos:
                 mime_type="image/png",
             )
 
+    def test_la_redaccion_valida_su_geometria(self) -> None:
+        with pytest.raises(ValueError):
+            RedactionObject(object_id="r", page_index=0, rect=PdfRect(0, 0, 0, 10))
+        with pytest.raises(ValueError):
+            RedactionObject(object_id=" ", page_index=0, rect=PdfRect(0, 0, 10, 10))
+        with pytest.raises(ValueError):
+            RedactionObject(object_id="r", page_index=-1, rect=PdfRect(0, 0, 10, 10))
+
     def test_los_objetos_son_inmutables(self) -> None:
         obj = text_object()
 
@@ -116,6 +126,17 @@ class TestComandos:
         objects = apply_command(objects, AddImageCommand(image))
 
         assert objects == {"texto-1": text, "imagen-1": image}
+
+    def test_anadir_redaccion(self) -> None:
+        redaction = RedactionObject(
+            object_id="redaccion-1",
+            page_index=0,
+            rect=PdfRect(10, 20, 110, 60),
+        )
+
+        objects = apply_command({}, AddRedactionCommand(redaction))
+
+        assert objects == {"redaccion-1": redaction}
 
     def test_no_permite_identificadores_duplicados(self) -> None:
         text = text_object()

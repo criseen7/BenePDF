@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from bene.application.use_cases.edit_session import EditSession
-from bene.domain.editing import ImageObject, TextObject, TextStyle
+from bene.domain.editing import ImageObject, RedactionObject, TextObject, TextStyle
 from bene.domain.errors import EditObjectNotFoundError
 from bene.domain.models import PdfRect
 
@@ -47,6 +47,18 @@ class TestAnadir:
         assert obj.page_index == 1
         assert obj.mime_type == "image/jpeg"
         assert obj.source_path == Path("foto.jpg")
+
+    def test_anade_redaccion(self, session: EditSession) -> None:
+        rect = PdfRect(20, 30, 220, 90)
+
+        obj = session.add_redaction(1, rect)
+
+        assert isinstance(obj, RedactionObject)
+        assert obj.object_id == "redaccion-1"
+        assert obj.page_index == 1
+        assert obj.rect == rect
+        assert session.objects == (obj,)
+        assert session.is_dirty is True
 
     def test_los_identificadores_no_se_repiten_tras_deshacer(self, session: EditSession) -> None:
         first = session.add_text(0, PdfRect(0, 0, 100, 40), "Uno")
@@ -144,4 +156,43 @@ class TestHistorial:
         assert session.objects == ()
         assert session.can_undo is False
         assert session.can_redo is False
+        assert session.is_dirty is False
+
+
+class TestEstadoLimpio:
+    def test_mark_saved_deja_la_sesion_limpia(self, session: EditSession) -> None:
+        session.add_text(0, PdfRect(0, 0, 100, 40), "Uno")
+
+        session.mark_saved()
+
+        assert session.is_dirty is False
+
+    def test_deshacer_hasta_el_estado_guardado_queda_limpio(self, session: EditSession) -> None:
+        session.add_text(0, PdfRect(0, 0, 100, 40), "Uno")
+        session.mark_saved()
+        session.add_text(0, PdfRect(0, 50, 100, 90), "Dos")
+
+        session.undo()
+
+        assert session.is_dirty is False
+
+    def test_deshacer_y_anadir_otro_comando_vuelve_a_estar_sucio(
+        self, session: EditSession
+    ) -> None:
+        """Mismo número de comandos activos, contenido distinto."""
+        session.add_text(0, PdfRect(0, 0, 100, 40), "Uno")
+        session.mark_saved()
+        session.add_text(0, PdfRect(0, 50, 100, 90), "Dos")
+        session.undo()
+
+        session.add_text(0, PdfRect(0, 50, 100, 90), "Tres")
+
+        assert session.active_command_count == 2
+        assert session.is_dirty is True
+
+    def test_redacciones_tambien_cuentan_como_cambio(self, session: EditSession) -> None:
+        session.add_redaction(0, PdfRect(10, 10, 100, 40))
+
+        assert session.is_dirty is True
+        session.mark_saved()
         assert session.is_dirty is False

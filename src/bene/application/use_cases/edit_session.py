@@ -13,12 +13,14 @@ from pathlib import Path
 
 from bene.domain.editing import (
     AddImageCommand,
+    AddRedactionCommand,
     AddTextCommand,
     DeleteObjectCommand,
     EditCommand,
     EditObject,
     ImageObject,
     MoveObjectCommand,
+    RedactionObject,
     ResizeObjectCommand,
     TextObject,
     TextStyle,
@@ -89,6 +91,7 @@ class EditSession:
         self._objects: dict[str, EditObject] = {}
         self._id_factory = id_factory or self._default_id
         self._counters: dict[str, int] = {}
+        self._saved_commands: tuple[EditCommand, ...] = ()
 
     # ------------------------------------------------------------- consultas
 
@@ -110,8 +113,17 @@ class EditSession:
 
     @property
     def is_dirty(self) -> bool:
-        """Hay cambios activos que aún no se han exportado."""
-        return self._history.index > 0
+        """Hay cambios activos distintos del último estado exportado.
+
+        Se comparan las tuplas de comandos activos, no solo su cantidad: tras
+        deshacer y añadir otro comando el número puede coincidir y el
+        documento seguir siendo distinto del exportado.
+        """
+        return self._history.active_commands != self._saved_commands
+
+    def mark_saved(self) -> None:
+        """Registra el estado actual como exportado."""
+        self._saved_commands = self._history.active_commands
 
     @property
     def active_command_count(self) -> int:
@@ -162,6 +174,15 @@ class EditSession:
         self._push(AddImageCommand(obj))
         return obj
 
+    def add_redaction(self, page_index: int, rect: PdfRect) -> RedactionObject:
+        obj = RedactionObject(
+            object_id=self._new_id("redaccion"),
+            page_index=page_index,
+            rect=rect,
+        )
+        self._push(AddRedactionCommand(obj))
+        return obj
+
     def move_object(self, object_id: str, rect: PdfRect) -> None:
         obj = self._require(object_id)
         self._push(MoveObjectCommand(object_id, obj.page_index, rect))
@@ -189,6 +210,7 @@ class EditSession:
     def clear(self) -> None:
         self._history.clear()
         self._objects.clear()
+        self._saved_commands = ()
 
     # ------------------------------------------------------------ internos
 

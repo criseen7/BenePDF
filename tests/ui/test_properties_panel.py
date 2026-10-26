@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from pytestqt.qtbot import QtBot
 
-from bene.domain.editing import ImageObject, TextObject, TextStyle
+from bene.domain.editing import ImageObject, RedactionObject, TextObject, TextStyle
 from bene.domain.models import PdfRect
 from bene.presentation.widgets.properties_panel import ObjectPropertiesPanel
 
@@ -32,6 +32,14 @@ def make_image() -> ImageObject:
         data=b"png",
         mime_type="image/png",
         source_path=Path("foto.png"),
+    )
+
+
+def make_redaction() -> RedactionObject:
+    return RedactionObject(
+        object_id="redaccion-1",
+        page_index=0,
+        rect=PdfRect(10, 20, 210, 80),
     )
 
 
@@ -65,6 +73,18 @@ def test_muestra_el_archivo_de_la_imagen(qtbot: QtBot) -> None:
 
     assert panel._title.text() == "Imagen añadida"
     assert "foto.png" in panel._preview.text()
+
+
+def test_muestra_la_redaccion_y_su_geometria(qtbot: QtBot) -> None:
+    panel = ObjectPropertiesPanel()
+    qtbot.addWidget(panel)
+
+    panel.set_object(make_redaction())
+
+    assert panel._title.text() == "Redacción"
+    assert "eliminará de forma permanente" in panel._preview.text()
+    assert panel.object_geometry() == PdfRect(10, 20, 210, 80)
+    assert panel._apply.isEnabled() is True
 
 
 def test_emite_la_geometria_editada(qtbot: QtBot) -> None:

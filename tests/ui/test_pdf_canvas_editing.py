@@ -7,7 +7,7 @@ from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QPoint, Qt
 from PySide6.QtGui import QColor, QImage, QImageWriter
 from pytestqt.qtbot import QtBot
 
-from bene.domain.editing import ImageObject, TextObject
+from bene.domain.editing import ImageObject, RedactionObject, TextObject
 from bene.domain.models import PdfRect
 from bene.presentation.viewer.coordinates import CoordinateMapper
 from bene.presentation.viewer.pdf_canvas import CanvasTool, PdfCanvas
@@ -109,6 +109,52 @@ class TestRegion:
         canvas.clear_region()
 
         assert canvas.region is None
+
+
+class TestRedaccion:
+    def test_arrastrar_emite_la_region_a_redactar(self, qtbot: QtBot) -> None:
+        canvas = make_canvas(qtbot)
+        canvas.set_tool(CanvasTool.REDACT)
+        redactions: list[PdfRect] = []
+        regions: list[PdfRect] = []
+        canvas.redaction_requested.connect(redactions.append)
+        canvas.region_selected.connect(regions.append)
+
+        qtbot.mousePress(canvas, Qt.MouseButton.LeftButton, pos=QPoint(10, 20))
+        qtbot.mouseMove(canvas, QPoint(60, 80))
+        qtbot.mouseRelease(canvas, Qt.MouseButton.LeftButton, pos=QPoint(60, 80))
+
+        assert redactions == [PdfRect(10, 20, 60, 80)]
+        assert regions == []
+        assert canvas.region is None
+
+    def test_un_clic_sin_arrastre_no_marca_redaccion(self, qtbot: QtBot) -> None:
+        canvas = make_canvas(qtbot)
+        canvas.set_tool(CanvasTool.REDACT)
+        redactions: list[PdfRect] = []
+        canvas.redaction_requested.connect(redactions.append)
+
+        qtbot.mousePress(canvas, Qt.MouseButton.LeftButton, pos=QPoint(10, 20))
+        qtbot.mouseRelease(canvas, Qt.MouseButton.LeftButton, pos=QPoint(10, 20))
+
+        assert redactions == []
+
+    def test_pinta_la_redaccion_en_negro(self, qtbot: QtBot) -> None:
+        canvas = make_canvas(qtbot)
+        canvas.set_objects(
+            [
+                RedactionObject(
+                    object_id="redaccion-1",
+                    page_index=0,
+                    rect=PdfRect(10, 20, 60, 80),
+                )
+            ]
+        )
+
+        image = canvas.grab().toImage()
+
+        assert image.pixelColor(35, 50).lightness() < 100
+        assert image.pixelColor(150, 20).lightness() > 200
 
 
 class TestColocacion:
