@@ -98,6 +98,16 @@ def make_rotated_pdf(path: Path, *, rotation: int = 90) -> Path:
     return path
 
 
+def make_rotated_empty_pdf(path: Path, *, rotation: int = 90) -> Path:
+    """PDF de una página en blanco con /Rotate distinto de cero."""
+    document = pymupdf.open()
+    page = document.new_page(width=A4_WIDTH, height=A4_HEIGHT)
+    page.set_rotation(rotation)
+    document.save(path)
+    document.close()
+    return path
+
+
 def make_corrupt_file(path: Path) -> Path:
     """Archivo con contenido binario que no es un PDF."""
     path.write_bytes(bytes(range(256)) * 8)

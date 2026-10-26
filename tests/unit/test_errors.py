@@ -9,6 +9,7 @@ from bene.domain.errors import (
     DocumentAccessError,
     DocumentNotFoundError,
     EncryptedDocumentError,
+    ExportError,
     InvalidGeometryError,
     PageOutOfRangeError,
     RenderError,
@@ -64,3 +65,11 @@ def test_error_de_render_incluye_pagina_y_motivo() -> None:
 def test_error_de_geometria_es_value_error() -> None:
     assert isinstance(InvalidGeometryError("x"), ValueError)
     assert isinstance(InvalidGeometryError("x"), BeneError)
+
+
+def test_error_de_exportacion_conserva_el_mensaje() -> None:
+    error = ExportError("No se pudo escribir la copia")
+
+    assert isinstance(error, BeneError)
+    assert error.message == "No se pudo escribir la copia"
+    assert "No se pudo escribir" in str(error)

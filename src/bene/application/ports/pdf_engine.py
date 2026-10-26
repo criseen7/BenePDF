@@ -19,10 +19,12 @@ sesión por hilo; el visor puede pedir renders desde un hilo de trabajo.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
+from bene.domain.editing import EditObject
 from bene.domain.models import DocumentInfo, PageInfo
 
 BYTES_PER_PIXEL = 3
@@ -93,6 +95,18 @@ class OpenedDocument(Protocol):
         """Renderiza la página a la escala y rotación de vista indicadas.
 
         Errores esperados: :class:`PageOutOfRangeError` y :class:`RenderError`.
+        """
+        ...
+
+    def export_to(self, destination: Path, *, objects: Iterable[EditObject]) -> None:
+        """Escribe una copia nueva con las ediciones materializadas.
+
+        La implementación no modifica el archivo original. Debe escribir a un
+        archivo temporal, validar el resultado y reemplazar ``destination`` de
+        forma atómica (RNF-005). Las redacciones se aplican antes que los
+        textos e imágenes nuevos.
+
+        Errores esperados: :class:`ExportError` y :class:`DocumentClosedError`.
         """
         ...
 

@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 
 from bene.application.ports.pdf_engine import RenderedPage
-from bene.domain.errors import PageOutOfRangeError
+from bene.domain.editing import EditObject
+from bene.domain.errors import ExportError, PageOutOfRangeError
 from bene.domain.models import VALID_ROTATIONS, DocumentInfo, PageInfo, PageKind
 
 
@@ -18,6 +19,8 @@ class FakeDocument:
         self._pages = tuple(pages)
         self.closed = False
         self.render_calls: list[tuple[int, float, int]] = []
+        self.export_calls: list[tuple[Path, tuple[EditObject, ...]]] = []
+        self.export_should_fail = False
 
     @property
     def info(self) -> DocumentInfo:
@@ -56,13 +59,26 @@ class FakeDocument:
     def close(self) -> None:
         self.closed = True
 
+    def export_to(self, destination: Path, *, objects: Iterable[EditObject]) -> None:
+        if self.export_should_fail:
+            raise ExportError("Fallo de exportación simulado")
+        self.export_calls.append((destination, tuple(objects)))
+        destination.write_bytes(b"%PDF-1.7 exportacion falsa")
+
 
 class FakePdfEngine:
     """Motor falso que abre siempre el mismo documento."""
 
-    def __init__(self, pages: Sequence[PageInfo], *, title: str = "Documento de prueba") -> None:
+    def __init__(
+        self,
+        pages: Sequence[PageInfo],
+        *,
+        title: str = "Documento de prueba",
+        encrypted: bool = False,
+    ) -> None:
         self._pages = tuple(pages)
         self._title = title
+        self._encrypted = encrypted
         self.opened: list[tuple[Path, str | None]] = []
         self.documents: list[FakeDocument] = []
 
@@ -73,6 +89,7 @@ class FakePdfEngine:
             page_count=len(self._pages),
             file_size_bytes=1024,
             metadata={"title": self._title},
+            encrypted=self._encrypted,
         )
         document = FakeDocument(info, self._pages)
         self.documents.append(document)

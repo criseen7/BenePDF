@@ -119,6 +119,16 @@ class InvalidEditOperationError(EditError, ValueError):
     """El comando no se puede aplicar al estado actual de la edición."""
 
 
+class ExportError(BeneError):
+    """No se pudo materializar la edición en un archivo nuevo."""
+
+    message: str
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
 class RenderError(BeneError):
     """El motor no pudo renderizar una página."""
 
