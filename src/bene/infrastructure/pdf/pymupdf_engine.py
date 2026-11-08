@@ -22,9 +22,8 @@ from typing import Any, Final, cast
 
 import pymupdf
 
-from bene.application.ports.pdf_engine import RenderedPage
+from bene.application.ports.pdf_engine import RenderedPage, TextMeasurement
 from bene.domain.editing import (
-    SUPPORTED_FONTS,
     EditObject,
     ImageObject,
     RedactionObject,
@@ -42,6 +41,7 @@ from bene.domain.errors import (
     UnsupportedDocumentError,
 )
 from bene.domain.models import VALID_ROTATIONS, DocumentInfo, PageInfo, PageKind, PdfRect
+from bene.infrastructure.fonts import bundled_font_path, font_alias, normalized_font_name
 
 TEXT_CHAR_THRESHOLD: Final[int] = 20
 """A partir de este número de caracteres la página se considera de texto."""
@@ -125,9 +125,16 @@ def _visible_rect_to_page(page: pymupdf.Page, rect: PdfRect) -> pymupdf.Rect:
 
     ``insert_textbox``, ``insert_image`` y ``add_redact_annot`` trabajan en las
     coordenadas sin rotar de la página; el lienzo y el modelo usan las visibles.
+
+    La transformación tiene en cuenta el desplazamiento del CropBox: en páginas
+    recortadas, el origen visible no coincide con el de la página sin rotar.
     """
     visible = pymupdf.Rect(rect.x0, rect.y0, rect.x1, rect.y1)
-    return visible * page.derotation_matrix
+    cropbox = page.cropbox
+    to_pdf = pymupdf.Matrix(
+        1, 0, 0, -1, -cropbox.x0, cropbox.y1
+    ) * page.rotation_matrix
+    return visible * ~to_pdf * page.transformation_matrix
 
 
 def _hex_to_rgb(color: str) -> tuple[float, float, float]:
@@ -139,19 +146,55 @@ def _hex_to_rgb(color: str) -> tuple[float, float, float]:
     )
 
 
+def _font_options(font_name: str) -> tuple[dict[str, Any], pymupdf.Font | None]:
+    """Opciones para insertar texto y la fuente cargada, si está disponible."""
+    logical = normalized_font_name(font_name)
+    path = bundled_font_path(logical)
+    if path is None:
+        return {"fontname": logical}, None
+    return (
+        {"fontname": font_alias(logical), "fontfile": str(path)},
+        pymupdf.Font(fontfile=str(path)),
+    )
+
+
+def _unsupported_characters(font: pymupdf.Font, text: str) -> tuple[str, ...]:
+    return tuple(
+        sorted(
+            {
+                character
+                for character in text
+                if not character.isspace() and not font.has_glyph(ord(character))
+            }
+        )
+    )
+
+
 def _insert_text(page: pymupdf.Page, obj: TextObject) -> None:
-    font_name = obj.style.font_name if obj.style.font_name in SUPPORTED_FONTS else "Helvetica"
+    font_options, font = _font_options(obj.style.font_name)
+    if font is not None:
+        unsupported = _unsupported_characters(font, obj.text)
+        if unsupported:
+            raise ExportError(
+                f"El texto del objeto {obj.object_id!r} en la página "
+                f"{obj.page_index + 1} contiene caracteres que la fuente no admite: "
+                f"{''.join(unsupported)}"
+            )
+
     remaining = page.insert_textbox(
         _visible_rect_to_page(page, obj.rect),
         obj.text,
-        fontname=font_name,
         fontsize=obj.style.font_size,
         color=_hex_to_rgb(obj.style.color),
         align=TEXT_ALIGNMENTS[obj.style.alignment],
-        rotate=(360 - page.rotation) % 360,
+        rotate=page.rotation,
+        **font_options,
     )
     if remaining < 0:
-        raise ExportError(f"El texto no cabe en su región de la página {obj.page_index + 1}")
+        raise ExportError(
+            f"El texto del objeto {obj.object_id!r} no cabe en la página "
+            f"{obj.page_index + 1}: faltan {abs(remaining):.1f} puntos de alto"
+        )
 
 
 class PyMuPDFEngine:
@@ -301,6 +344,40 @@ class PyMuPDFDocument:
             self._validate_destination(target)
             self._write_export(target, items)
 
+    def measure_text(
+        self,
+        page_index: int,
+        *,
+        text: str,
+        rect: PdfRect,
+        font_name: str,
+        font_size: float,
+        alignment: TextAlignment = TextAlignment.LEFT,
+    ) -> TextMeasurement:
+        with self._lock:
+            page = self._load_page(page_index)
+            font_options, font = _font_options(font_name)
+            unsupported = _unsupported_characters(font, text) if font is not None else ()
+
+            scratch = pymupdf.open()
+            try:
+                scratch_page = scratch.new_page(width=page.rect.width, height=page.rect.height)
+                remaining = scratch_page.insert_textbox(
+                    pymupdf.Rect(rect.x0, rect.y0, rect.x1, rect.y1),
+                    text,
+                    fontsize=font_size,
+                    align=TEXT_ALIGNMENTS[alignment],
+                    **font_options,
+                )
+            finally:
+                scratch.close()
+
+        return TextMeasurement(
+            fits=remaining >= 0 and not unsupported,
+            overflow_points=max(0.0, -remaining),
+            unsupported=unsupported,
+        )
+
     def close(self) -> None:
         with self._lock:
             if self._closed:
@@ -329,13 +406,21 @@ class PyMuPDFDocument:
             self._build_export(temporary, objects)
             self._validate_export(temporary)
             temporary.replace(target)
-        except ExportError:
-            raise
+        except ExportError as error:
+            raise self._destination_error(error, target) from error
         except Exception as error:  # el motor y el sistema pueden fallar de muchas formas
-            raise ExportError(f"No se pudo exportar el documento: {error}") from error
+            raise self._destination_error(
+                ExportError(f"No se pudo exportar el documento: {error}"), target
+            ) from error
         finally:
             with suppress(OSError):
                 temporary.unlink(missing_ok=True)
+
+    @staticmethod
+    def _destination_error(error: ExportError, target: Path) -> ExportError:
+        if not target.exists():
+            return error
+        return ExportError(f"{error}\n\nEl archivo de destino no se ha modificado.")
 
     def _build_export(self, temporary: Path, objects: tuple[EditObject, ...]) -> None:
         # PyMuPDF solo puede conservar la protección con la contraseña de
