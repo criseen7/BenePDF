@@ -72,12 +72,12 @@ Prioridades: **M** = obligatorio para el MVP; **S** = siguiente fase; **F** = fu
 | RF-004 | M | Mostrar el número de páginas y el nombre del documento abierto. | La información se actualiza al abrir otro documento. |
 | RF-005 | M | Detectar si una página contiene texto seleccionable. | El programa comunica si la página parece contener texto nativo, contenido mayormente gráfico o una imagen escaneada; esta detección es orientativa. |
 | RF-006 | M | Seleccionar una región rectangular de la página. | La región seleccionada se representa visualmente y se convierte correctamente entre coordenadas de pantalla y coordenadas PDF. |
-| RF-007 | M | Añadir un cuadro de texto. | El usuario define contenido, fuente disponible, tamaño, color, alineación y posición; el resultado se muestra antes de guardarse. |
+| RF-007 | M | Añadir un cuadro de texto. | El usuario define contenido, fuente disponible, tamaño, color, alineación y posición; el resultado se muestra antes de guardarse. Las fuentes Helvetica, Times-Roman y Courier se embeben y conservan euro, acentos y alfabetos latinos; los caracteres sin glifo se señalan antes de exportar. |
 | RF-008 | M | Mover y redimensionar un cuadro de texto añadido. | El cuadro puede ajustarse con el ratón o controles numéricos y los cambios se reflejan en la vista previa. |
 | RF-009 | M | Corregir visualmente texto existente usando redacción e inserción de texto nuevo. | La aplicación solicita confirmación antes de aplicar la redacción y señala que puede no reproducir exactamente la fuente o el fondo originales. |
 | RF-010 | M | Redactar permanentemente una región. | El contenido subyacente de la región queda eliminado en el archivo exportado y no es recuperable mediante selección o copia de texto. |
 | RF-011 | M | Insertar una imagen desde un archivo local. | Se admiten al menos PNG y JPEG; la imagen aparece en la página seleccionada. |
-| RF-012 | M | Mover, redimensionar y eliminar una imagen insertada durante la sesión. | Las operaciones se reflejan en la vista previa y pueden deshacerse antes de exportar. |
+| RF-012 | M | Mover, redimensionar y eliminar una imagen insertada durante la sesión. | Las operaciones se reflejan en la vista previa y pueden deshacerse antes de exportar. Al redimensionar, la imagen se estira libremente; mantener pulsada **Shift** conserva su proporción. |
 | RF-013 | S | Reemplazar una imagen ya existente en el PDF. | El usuario selecciona una imagen detectada y la sustituye; si el PDF no permite identificarla de manera fiable, la función explica la limitación. |
 | RF-014 | M | Deshacer y rehacer cambios. | Las operaciones editables se almacenan en un historial de sesión y se revierten en orden. |
 | RF-015 | M | Guardar como un archivo PDF nuevo. | El archivo exportado puede abrirse de nuevo y los cambios aparecen en la página correspondiente. El original no se sobrescribe por defecto. |
