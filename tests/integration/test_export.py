@@ -9,7 +9,13 @@ import pymupdf
 import pytest
 
 from bene.application.use_cases.export_document import ExportDocument
-from bene.domain.editing import ImageObject, RedactionObject, TextObject, TextStyle
+from bene.domain.editing import (
+    ImageObject,
+    RedactionObject,
+    TextAlignment,
+    TextObject,
+    TextStyle,
+)
 from bene.domain.errors import ExportError
 from bene.domain.models import PdfRect
 from bene.infrastructure.pdf.pymupdf_engine import PyMuPDFEngine
@@ -45,6 +51,34 @@ def png_bytes() -> bytes:
     return pixmap.tobytes("png")
 
 
+def colored_png_bytes(width: int = 100, height: int = 50) -> bytes:
+    """PNG con un color distinto en cada esquina para detectar la orientación."""
+    document = pymupdf.open()
+    page = document.new_page(width=width, height=height)
+    page.draw_rect(
+        pymupdf.Rect(0, 0, width / 2, height / 2), color=(1, 0, 0), fill=(1, 0, 0)
+    )
+    page.draw_rect(
+        pymupdf.Rect(width / 2, 0, width, height / 2), color=(0, 0, 1), fill=(0, 0, 1)
+    )
+    page.draw_rect(
+        pymupdf.Rect(0, height / 2, width / 2, height), color=(0, 1, 0), fill=(0, 1, 0)
+    )
+    pixmap = page.get_pixmap(alpha=False)
+    document.close()
+    return pixmap.tobytes("png")
+
+
+def displayed_lines(page: pymupdf.Page) -> list[tuple[str, pymupdf.Rect]]:
+    """Líneas de texto con su caja en coordenadas visibles (tras ``/Rotate``)."""
+    lines: list[tuple[str, pymupdf.Rect]] = []
+    for block in page.get_text("dict")["blocks"]:
+        for line in block.get("lines", []):
+            text = "".join(span["text"] for span in line["spans"])
+            lines.append((text, pymupdf.Rect(line["bbox"]) * page.rotation_matrix))
+    return lines
+
+
 def dark_bbox(image: pymupdf.Pixmap, rect: pymupdf.Rect) -> tuple[int, int, int, int] | None:
     """Caja de píxeles oscuros dentro de ``rect`` (coordenadas de la imagen)."""
     x0 = max(0, round(rect.x0))
@@ -56,6 +90,26 @@ def dark_bbox(image: pymupdf.Pixmap, rect: pymupdf.Rect) -> tuple[int, int, int,
         for x in range(x0, x1):
             pixel = image.pixel(x, y)
             if pixel[0] < 100 and pixel[1] < 100 and pixel[2] < 100:
+                min_x, min_y = min(min_x, x), min(min_y, y)
+                max_x, max_y = max(max_x, x), max(max_y, y)
+    if max_x < x0:
+        return None
+    return (min_x, min_y, max_x + 1, max_y + 1)
+
+
+def non_white_bbox(
+    image: pymupdf.Pixmap, rect: pymupdf.Rect
+) -> tuple[int, int, int, int] | None:
+    """Caja de píxeles no blancos dentro de ``rect`` (coordenadas de la imagen)."""
+    x0 = max(0, round(rect.x0))
+    y0 = max(0, round(rect.y0))
+    x1 = min(image.width, round(rect.x1))
+    y1 = min(image.height, round(rect.y1))
+    min_x, min_y, max_x, max_y = x1, y1, x0 - 1, y0 - 1
+    for y in range(y0, y1):
+        for x in range(x0, x1):
+            pixel = image.pixel(x, y)
+            if not (pixel[0] > 245 and pixel[1] > 245 and pixel[2] > 245):
                 min_x, min_y = min(min_x, x), min(min_y, y)
                 max_x, max_y = max(max_x, x), max(max_y, y)
     if max_x < x0:
@@ -160,6 +214,76 @@ class TestExportacion:
             pixmap = page.get_pixmap(alpha=False)
             assert dark_bbox(pixmap, pymupdf.Rect(60, 60, 240, 140)) is not None
 
+    def test_conserva_el_euro_y_los_acentos(
+        self, engine: PyMuPDFEngine, tmp_path: Path
+    ) -> None:
+        source = synthetic.make_empty_pdf(tmp_path / "original.pdf")
+        destination = tmp_path / "unicode.pdf"
+        obj = TextObject(
+            "texto-1",
+            0,
+            PdfRect(50, 50, 450, 90),
+            "Precio: 10 € - Añoranza, pingüino, cañón",
+            TextStyle(font_size=14),
+        )
+
+        export(engine, source, destination, (obj,))
+
+        with pymupdf.open(destination) as document:
+            words = [word[4].replace("\xa0", " ") for word in document[0].get_text("words")]
+        assert "€" in words
+        assert "Añoranza," in words
+        assert "pingüino," in words
+        assert "cañón" in words
+
+    def test_el_aviso_de_texto_que_no_cabe_identifica_el_objeto(
+        self, engine: PyMuPDFEngine, tmp_path: Path
+    ) -> None:
+        source = synthetic.make_empty_pdf(tmp_path / "original.pdf")
+        destination = tmp_path / "salida.pdf"
+        obj = TextObject(
+            "texto-largo-1",
+            0,
+            PdfRect(50, 50, 120, 70),
+            "X" * 500,
+            TextStyle(font_size=14),
+        )
+
+        with (
+            closing(engine.open_document(source)) as document,
+            pytest.raises(ExportError) as info,
+        ):
+            ExportDocument()(document, destination, objects=(obj,))
+
+        message = str(info.value)
+        assert "texto-largo-1" in message
+        assert "página 1" in message
+        assert "faltan" in message.lower()
+        assert not destination.exists()
+
+    def test_un_fallo_no_modifica_un_destino_existente(
+        self, engine: PyMuPDFEngine, tmp_path: Path
+    ) -> None:
+        source = synthetic.make_empty_pdf(tmp_path / "original.pdf")
+        destination = tmp_path / "existente.pdf"
+        destination.write_bytes(b"CONTENIDO ANTERIOR")
+        obj = TextObject(
+            "texto-1",
+            0,
+            PdfRect(50, 50, 120, 70),
+            "X" * 500,
+            TextStyle(font_size=14),
+        )
+
+        with (
+            closing(engine.open_document(source)) as document,
+            pytest.raises(ExportError) as info,
+        ):
+            ExportDocument()(document, destination, objects=(obj,))
+
+        assert destination.read_bytes() == b"CONTENIDO ANTERIOR"
+        assert "no se ha modificado" in str(info.value)
+
     def test_rechaza_el_mismo_archivo(self, engine: PyMuPDFEngine, tmp_path: Path) -> None:
         source = synthetic.make_text_pdf(tmp_path / "original.pdf")
         original = source.read_bytes()
@@ -240,6 +364,57 @@ class TestPaginasRotadas:
             assert width > height * 2
 
     @pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+    @pytest.mark.parametrize("alignment", list(TextAlignment))
+    def test_el_texto_multilinea_respeta_orden_alineacion_y_region(
+        self,
+        engine: PyMuPDFEngine,
+        tmp_path: Path,
+        rotation: int,
+        alignment: TextAlignment,
+    ) -> None:
+        source = synthetic.make_rotated_empty_pdf(
+            tmp_path / f"rotado-multilinea-{rotation}.pdf", rotation=rotation
+        )
+        destination = tmp_path / f"salida-multilinea-{rotation}-{alignment.value}.pdf"
+        visible = PdfRect(50, 50, 350, 160)
+        obj = TextObject(
+            "texto-1",
+            0,
+            visible,
+            "LINEA UNO\nLINEA DOS\nLINEA TRES",
+            TextStyle(font_size=14, alignment=alignment),
+        )
+
+        export(engine, source, destination, (obj,))
+
+        with pymupdf.open(destination) as document:
+            page = document[0]
+            assert page.rotation == rotation
+            lines = displayed_lines(page)
+            assert [text for text, _ in lines] == ["LINEA UNO", "LINEA DOS", "LINEA TRES"]
+
+            # El orden visual es de arriba hacia abajo, no el inverso.
+            tops = [bbox.y0 for _, bbox in lines]
+            assert tops == sorted(tops)
+
+            for _, bbox in lines:
+                assert visible.x0 - 2 <= bbox.x0
+                assert bbox.x1 <= visible.x1 + 2
+                assert visible.y0 - 2 <= bbox.y0
+                assert bbox.y1 <= visible.y1 + 2
+
+            if alignment is TextAlignment.LEFT:
+                for _, bbox in lines:
+                    assert bbox.x0 == pytest.approx(visible.x0, abs=2)
+            elif alignment is TextAlignment.CENTER:
+                center = (visible.x0 + visible.x1) / 2
+                for _, bbox in lines:
+                    assert (bbox.x0 + bbox.x1) / 2 == pytest.approx(center, abs=2)
+            else:
+                for _, bbox in lines:
+                    assert bbox.x1 == pytest.approx(visible.x1, abs=2)
+
+    @pytest.mark.parametrize("rotation", [0, 90, 180, 270])
     def test_la_imagen_nueva_queda_en_su_region(
         self, engine: PyMuPDFEngine, tmp_path: Path, rotation: int
     ) -> None:
@@ -259,6 +434,40 @@ class TestPaginasRotadas:
             bbox = dark_bbox(pixmap, pymupdf.Rect(0, 0, pixmap.width, pixmap.height))
             assert bbox is not None
             assert bbox == pytest.approx((visible.x0, visible.y0, visible.x1, visible.y1), abs=1)
+
+    @pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+    def test_la_imagen_queda_bien_con_cropbox_desplazado(
+        self, engine: PyMuPDFEngine, tmp_path: Path, rotation: int
+    ) -> None:
+        source = synthetic.make_cropped_rotated_pdf(
+            tmp_path / f"recortado-{rotation}.pdf", rotation=rotation
+        )
+        destination = tmp_path / f"salida-recortada-{rotation}.pdf"
+        visible = PdfRect(50, 50, 250, 150)
+        obj = ImageObject("imagen-1", 0, visible, colored_png_bytes(), "image/png")
+
+        export(engine, source, destination, (obj,))
+
+        with pymupdf.open(destination) as document:
+            page = document[0]
+            assert page.rotation == rotation
+            pixmap = page.get_pixmap(alpha=False)
+            bbox = non_white_bbox(pixmap, pymupdf.Rect(0, 0, pixmap.width, pixmap.height))
+            assert bbox is not None
+            assert bbox == pytest.approx(
+                (visible.x0, visible.y0, visible.x1, visible.y1), abs=1
+            )
+
+            # La orientación de la imagen no se invierte al rotar la página.
+            x0, y0, x1, y1 = bbox
+            top_left = pixmap.pixel(x0 + 5, y0 + 5)
+            top_right = pixmap.pixel(x1 - 5, y0 + 5)
+            bottom_left = pixmap.pixel(x0 + 5, y1 - 5)
+            bottom_right = pixmap.pixel(x1 - 5, y1 - 5)
+            assert top_left[0] > 200 and max(top_left[1:]) < 80
+            assert top_right[2] > 200 and max(top_right[0], top_right[1]) < 80
+            assert bottom_left[1] > 200 and max(bottom_left[0], bottom_left[2]) < 80
+            assert min(bottom_right) > 240
 
     @pytest.mark.parametrize("rotation", [90, 270])
     def test_la_redaccion_usa_las_coordenadas_visibles(
