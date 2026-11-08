@@ -17,7 +17,7 @@ from bene.domain.errors import (
     RenderError,
     UnsupportedDocumentError,
 )
-from bene.domain.models import PageKind
+from bene.domain.models import PageKind, PdfRect
 from bene.infrastructure.pdf.pymupdf_engine import PyMuPDFEngine
 from tests.integration import synthetic
 
@@ -258,6 +258,69 @@ class TestRender:
             pytest.raises(ValueError, match="Rotación"),
         ):
             document.render_page(0, scale=1.0, rotation=45)
+
+
+class TestMedicionDeTexto:
+    def test_un_texto_corto_cabe(self, engine: PyMuPDFEngine, tmp_path: Path) -> None:
+        path = synthetic.make_text_pdf(tmp_path / "texto.pdf")
+
+        with closing(engine.open_document(path)) as document:
+            measurement = document.measure_text(
+                0,
+                text="Hola",
+                rect=PdfRect(50, 50, 300, 100),
+                font_name="Helvetica",
+                font_size=12,
+            )
+
+        assert measurement.fits is True
+        assert measurement.overflow_points == 0
+        assert measurement.unsupported == ()
+
+    def test_un_texto_largo_no_cabe(self, engine: PyMuPDFEngine, tmp_path: Path) -> None:
+        path = synthetic.make_text_pdf(tmp_path / "texto.pdf")
+
+        with closing(engine.open_document(path)) as document:
+            measurement = document.measure_text(
+                0,
+                text="X" * 500,
+                rect=PdfRect(50, 50, 120, 70),
+                font_name="Helvetica",
+                font_size=14,
+            )
+
+        assert measurement.fits is False
+        assert measurement.overflow_points > 0
+
+    def test_detecta_caracteres_sin_glifo(self, engine: PyMuPDFEngine, tmp_path: Path) -> None:
+        path = synthetic.make_text_pdf(tmp_path / "texto.pdf")
+
+        with closing(engine.open_document(path)) as document:
+            measurement = document.measure_text(
+                0,
+                text="Hola 🙂",
+                rect=PdfRect(50, 50, 300, 100),
+                font_name="Helvetica",
+                font_size=12,
+            )
+
+        assert measurement.fits is False
+        assert "🙂" in measurement.unsupported
+
+    def test_conserva_el_euro(self, engine: PyMuPDFEngine, tmp_path: Path) -> None:
+        path = synthetic.make_text_pdf(tmp_path / "texto.pdf")
+
+        with closing(engine.open_document(path)) as document:
+            measurement = document.measure_text(
+                0,
+                text="Precio: 10 €",
+                rect=PdfRect(50, 50, 300, 100),
+                font_name="Helvetica",
+                font_size=12,
+            )
+
+        assert measurement.fits is True
+        assert measurement.unsupported == ()
 
 
 class TestCierre:
