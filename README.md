@@ -58,9 +58,9 @@ Los cambios se guardan **solo en memoria** durante la sesión: el PDF original n
 
 1. **Seleccionar región** (`Ctrl+Shift+R`): arrastra sobre la página para marcar un rectángulo. La barra de estado muestra sus coordenadas y tamaño en puntos PDF.
 2. **Redactar región** (`Ctrl+Shift+X`): arrastra sobre el contenido que quieras eliminar. Se pide confirmación porque, al exportar, el contenido subyacente se borra de forma permanente del archivo nuevo. La región se muestra en negro y se puede mover, redimensionar o eliminar como cualquier otro objeto antes de exportar.
-3. **Añadir texto** (`Ctrl+T`): escribe el contenido y elige fuente, tamaño, color y alineación. Si hay una región seleccionada, el texto ocupa esa región; si no, la herramienta queda activa y el texto se coloca con un clic. Puedes redactar una zona y escribir el texto corregido encima en el mismo paso.
+3. **Añadir texto** (`Ctrl+T`): escribe el contenido y elige fuente, tamaño, color y alineación. Si hay una región seleccionada, el texto ocupa esa región; si no, la herramienta queda activa y el texto se coloca con un clic. Puedes redactar una zona y escribir el texto corregido encima en el mismo paso. Las fuentes Helvetica, Times-Roman y Courier se embeben en el PDF, así que conservan el euro, los acentos y los alfabetos latinos; si el texto no cabe en su región o usa caracteres que la fuente no admite, el objeto se marca en rojo y la exportación se bloquea con un aviso que indica la página y el espacio que falta.
 4. **Insertar imagen** (`Ctrl+I`): admite PNG y JPEG de hasta 20 MB. Igual que el texto, usa la región seleccionada o el siguiente clic. La imagen se ajusta a la proporción original.
-5. **Mover y redimensionar**: con la herramienta **Seleccionar** (`Ctrl+Shift+V`), haz clic en un objeto para seleccionarlo. Con el objeto seleccionado, arrastra desde su cuerpo para moverlo o desde las asas de las esquinas para cambiar su tamaño; el cursor cambia al acercarte a cada zona. El panel **Propiedades** permite introducir X, Y, ancho y alto en puntos PDF.
+5. **Mover y redimensionar**: con la herramienta **Seleccionar** (`Ctrl+Shift+V`), haz clic en un objeto para seleccionarlo. Con el objeto seleccionado, arrastra desde su cuerpo para moverlo o desde las asas de las esquinas para cambiar su tamaño; el cursor cambia al acercarte a cada zona. Las imágenes se estiran libremente; mantén pulsada **Shift** mientras arrastras un asa para conservar su proporción. El panel **Propiedades** permite introducir X, Y, ancho y alto en puntos PDF.
 6. **Eliminar** (`Supr`): borra el objeto seleccionado.
 7. **Deshacer / Rehacer** (`Ctrl+Z` / `Ctrl+Y`): recorre el historial completo de la sesión, incluidas las redacciones.
 
@@ -69,9 +69,9 @@ La barra de estado muestra **Cambios sin exportar** cuando hay ediciones activas
 ### Exportar el resultado
 
 1. Pulsa **Exportar como…** (`Ctrl+Shift+S`) o usa Archivo → Exportar como…
-2. Elige un nombre y una carpeta distintos del PDF original. La aplicación rechaza guardar sobre el original.
+2. Elige un nombre y una carpeta distintos del PDF original. La aplicación rechaza guardar sobre el original y propone `nombre-editado.pdf`, `nombre-editado-2.pdf`, … para no pisar una exportación anterior.
 3. Si hay redacciones, confirma que se aplicarán de forma permanente.
-4. Bene PDF escribe primero en un archivo temporal, lo reabre para validarlo y solo entonces reemplaza el destino. Si algo falla, el archivo original y el destino anterior quedan intactos.
+4. Bene PDF escribe primero en un archivo temporal, lo reabre para validarlo y solo entonces reemplaza el destino. Si algo falla, el archivo original y el destino anterior quedan intactos; el aviso de error lo indica de forma explícita.
 
 El archivo exportado puede abrirse de nuevo y contiene el texto, las imágenes y las redacciones aplicadas. La redacción elimina el texto subyacente (no solo lo tapa) y, en páginas escaneadas, borra únicamente los píxeles de la región marcada.
 
