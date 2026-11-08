@@ -5,10 +5,10 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
-from bene.application.ports.pdf_engine import RenderedPage
-from bene.domain.editing import EditObject
+from bene.application.ports.pdf_engine import RenderedPage, TextMeasurement
+from bene.domain.editing import EditObject, TextAlignment
 from bene.domain.errors import ExportError, PageOutOfRangeError
-from bene.domain.models import VALID_ROTATIONS, DocumentInfo, PageInfo, PageKind
+from bene.domain.models import VALID_ROTATIONS, DocumentInfo, PageInfo, PageKind, PdfRect
 
 
 class FakeDocument:
@@ -64,6 +64,25 @@ class FakeDocument:
             raise ExportError("Fallo de exportación simulado")
         self.export_calls.append((destination, tuple(objects)))
         destination.write_bytes(b"%PDF-1.7 exportacion falsa")
+
+    def measure_text(
+        self,
+        page_index: int,
+        *,
+        text: str,
+        rect: PdfRect,
+        font_name: str,
+        font_size: float,
+        alignment: TextAlignment = TextAlignment.LEFT,
+    ) -> TextMeasurement:
+        self.page_info(page_index)
+        line_height = font_size * 1.2
+        chars_per_line = max(1, int(rect.width // (font_size * 0.5)))
+        lines_capacity = max(1, int(rect.height // line_height))
+        needed_lines = max(1, -(-len(text) // chars_per_line))
+        fits = needed_lines <= lines_capacity
+        overflow = max(0.0, (needed_lines - lines_capacity) * line_height)
+        return TextMeasurement(fits=fits, overflow_points=overflow)
 
 
 class FakePdfEngine:
