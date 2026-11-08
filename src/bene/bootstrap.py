@@ -10,6 +10,7 @@ from bene.application.use_cases.render_page import RenderPage
 from bene.config import APP_NAME, AppPaths
 from bene.infrastructure.logging.setup import configure_logging
 from bene.infrastructure.pdf.pymupdf_engine import PyMuPDFEngine
+from bene.presentation.fonts import register_fonts
 from bene.presentation.main_window import MainWindow
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,7 @@ def create_application(*, paths: AppPaths | None = None) -> Application:
     logger.info("Iniciando %s", APP_NAME)
     logger.info("Registro técnico en %s", log_path)
 
+    register_fonts()
     engine = PyMuPDFEngine()
     window = MainWindow(
         open_document=OpenDocument(engine),
