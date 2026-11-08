@@ -32,6 +32,7 @@ from bene.domain.editing import (
     TextObject,
 )
 from bene.domain.models import PdfRect
+from bene.presentation.fonts import qt_font_family
 from bene.presentation.viewer.coordinates import CoordinateMapper
 
 PLACEHOLDER_SIZE = QSize(640, 480)
@@ -43,6 +44,7 @@ SELECTION_COLOR = QColor("#3daee9")
 REGION_COLOR = QColor(61, 174, 233, 55)
 REDACTION_COLOR = QColor(16, 16, 16, 200)
 REDACTION_BORDER = QColor("#e5534b")
+OVERFLOW_COLOR = QColor("#e5534b")
 HANDLE_COLOR = QColor("#ffffff")
 HANDLE_SIZE: Final[int] = 10
 # Poco más que el asa dibujada: si el radio es grande, arrastrar el cuerpo
@@ -103,6 +105,7 @@ class PdfCanvas(QWidget):
         self._region: PdfRect | None = None
         self._region_view: QRectF | None = None
         self._image_cache: dict[str, QImage] = {}
+        self._overflow_ids: set[str] = set()
 
         self._drag_mode: str | None = None
         self._drag_origin = QPointF()
@@ -151,6 +154,10 @@ class PdfCanvas(QWidget):
     def tool(self) -> CanvasTool:
         return self._tool
 
+    @property
+    def overflow_ids(self) -> frozenset[str]:
+        return frozenset(self._overflow_ids)
+
     # ---------------------------------------------------------------- estado
 
     def set_image(self, image: QImage | None) -> None:
@@ -198,6 +205,13 @@ class PdfCanvas(QWidget):
         else:
             self.setCursor(Qt.CursorShape.CrossCursor)
         self.update()
+
+    def set_overflow_ids(self, object_ids: Iterable[str]) -> None:
+        """Marca los textos que no caben en su región con un borde de aviso."""
+        overflow = set(object_ids)
+        if overflow != self._overflow_ids:
+            self._overflow_ids = overflow
+            self.update()
 
     def set_region(self, region: PdfRect | None) -> None:
         self._region = region
@@ -251,6 +265,10 @@ class PdfCanvas(QWidget):
 
         if isinstance(obj, TextObject):
             self._paint_text(painter, obj, view_rect)
+            if obj.object_id in self._overflow_ids:
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.setPen(QPen(OVERFLOW_COLOR, 1, Qt.PenStyle.DashLine))
+                painter.drawRect(view_rect)
         elif isinstance(obj, ImageObject):
             image = self._image_for(obj)
             if image.isNull():
@@ -276,7 +294,7 @@ class PdfCanvas(QWidget):
     def _paint_text(self, painter: QPainter, obj: TextObject, view_rect: QRectF) -> None:
         mapper = self._mapper
         assert mapper is not None
-        font = QFont(obj.style.font_name)
+        font = QFont(qt_font_family(obj.style.font_name))
         font.setPixelSize(max(1, round(obj.style.font_size * mapper.scale)))
         painter.setFont(font)
         painter.setPen(QColor(obj.style.color))
@@ -305,14 +323,15 @@ class PdfCanvas(QWidget):
         if obj is None or self._mapper is None:
             return
 
-        view_rect = QRectF(*self._mapper.rect_to_view(self._display_rect(obj)))
+        rect = self._display_rect(obj)
+        view_rect = QRectF(*self._mapper.rect_to_view(rect))
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.setPen(QPen(SELECTION_COLOR, 1, Qt.PenStyle.DashLine))
         painter.drawRect(view_rect)
 
         painter.setBrush(HANDLE_COLOR)
         painter.setPen(QPen(SELECTION_COLOR, 1))
-        for corner in self._page_corners(obj.rect):
+        for corner in self._page_corners(rect):
             x, y = self._mapper.to_view(*corner)
             painter.drawRect(
                 QRectF(
@@ -394,8 +413,12 @@ class PdfCanvas(QWidget):
             and self._resize_corner is not None
         ):
             point = self._mapper.to_page_clamped(position.x(), position.y())
+            preserve_aspect = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
             self._drag_preview_rect = self._resized_rect(
-                self._drag_original_rect, self._resize_corner, point
+                self._drag_original_rect,
+                self._resize_corner,
+                point,
+                preserve_aspect=preserve_aspect,
             )
             self.update()
 
@@ -466,7 +489,7 @@ class PdfCanvas(QWidget):
     def _handle_at_object(self, obj: EditObject, position: QPointF) -> int | None:
         if self._mapper is None:
             return None
-        for index, corner in enumerate(self._page_corners(obj.rect)):
+        for index, corner in enumerate(self._page_corners(self._display_rect(obj))):
             x, y = self._mapper.to_view(*corner)
             if (
                 abs(position.x() - x) <= HANDLE_HIT_RADIUS
@@ -515,8 +538,14 @@ class PdfCanvas(QWidget):
         dy = max(-rect.y0, min(dy, self._mapper.page_height - rect.y1))
         return rect.translated(dx, dy)
 
-    @staticmethod
-    def _resized_rect(rect: PdfRect, corner: int, point: tuple[float, float]) -> PdfRect:
+    def _resized_rect(
+        self,
+        rect: PdfRect,
+        corner: int,
+        point: tuple[float, float],
+        *,
+        preserve_aspect: bool = False,
+    ) -> PdfRect:
         left = corner in (0, 3)
         top = corner in (0, 1)
         x, y = point
@@ -533,6 +562,34 @@ class PdfCanvas(QWidget):
         else:
             y0 = rect.y0
             y1 = max(y, rect.y0 + MIN_OBJECT_SIZE)
+
+        if preserve_aspect and rect.width > 0 and rect.height > 0:
+            ratio = rect.width / rect.height
+            width = x1 - x0
+            height = y1 - y0
+            # Manda el eje que más crece, para que el objeto no se encoja
+            # cuando el puntero apenas se mueve en el otro eje.
+            if width / rect.width >= height / rect.height:
+                height = width / ratio
+            else:
+                width = height * ratio
+
+            if self._mapper is not None:
+                max_width = x1 if left else self._mapper.page_width - x0
+                max_height = y1 if top else self._mapper.page_height - y0
+                scale = min(1.0, max_width / width, max_height / height)
+                width *= scale
+                height *= scale
+
+            if left:
+                x0 = x1 - width
+            else:
+                x1 = x0 + width
+            if top:
+                y0 = y1 - height
+            else:
+                y1 = y0 + height
+
         return PdfRect(x0, y0, x1, y1)
 
     def _image_for(self, obj: ImageObject) -> QImage:
