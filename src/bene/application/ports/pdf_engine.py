@@ -24,8 +24,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from bene.domain.editing import EditObject
-from bene.domain.models import DocumentInfo, PageInfo
+from bene.domain.editing import EditObject, TextAlignment
+from bene.domain.models import DocumentInfo, PageInfo, PdfRect
 
 BYTES_PER_PIXEL = 3
 """Los renders se entregan siempre como RGB de 8 bits por canal."""
@@ -60,6 +60,15 @@ class RenderedPage:
             raise ValueError(f"Escala inválida: {self.scale}")
         if self.rotation not in (0, 90, 180, 270):
             raise ValueError(f"Rotación de vista inválida: {self.rotation}")
+
+
+@dataclass(frozen=True, slots=True)
+class TextMeasurement:
+    """Resultado de medir un texto en su región sin modificar el documento."""
+
+    fits: bool
+    overflow_points: float = 0.0
+    unsupported: tuple[str, ...] = ()
 
 
 class PdfEngine(Protocol):
@@ -107,6 +116,27 @@ class OpenedDocument(Protocol):
         textos e imágenes nuevos.
 
         Errores esperados: :class:`ExportError` y :class:`DocumentClosedError`.
+        """
+        ...
+
+    def measure_text(
+        self,
+        page_index: int,
+        *,
+        text: str,
+        rect: PdfRect,
+        font_name: str,
+        font_size: float,
+        alignment: TextAlignment = TextAlignment.LEFT,
+    ) -> TextMeasurement:
+        """Comprueba si un texto cabe en su región, sin modificar la página.
+
+        Es la medición autoritativa que comparte la exportación: la vista previa
+        puede usarla para señalar un desbordamiento antes de guardar. Los
+        caracteres sin glifo se devuelven en :attr:`TextMeasurement.unsupported`.
+
+        Errores esperados: :class:`PageOutOfRangeError` y
+        :class:`DocumentClosedError`.
         """
         ...
 
