@@ -256,6 +256,44 @@ class TestExportacion:
         assert engine.documents[0].export_calls == []
         assert window.is_dirty is True
 
+    def test_un_fallo_de_exportacion_mantiene_la_sesion_sucia(
+        self, qtbot: QtBot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        engine = FakePdfEngine(make_pages(1))
+        window = build_window(qtbot, engine)
+        open_ready(qtbot, window, tmp_path)
+        window.add_text_object(PdfRect(10, 20, 210, 80), "Hola")
+        engine.documents[0].export_should_fail = True
+        shown: list[str] = []
+        monkeypatch.setattr(
+            QMessageBox,
+            "critical",
+            lambda _parent, _title, text: shown.append(text),
+        )
+
+        assert window.export_document(tmp_path / "copia.pdf") is None
+
+        assert shown
+        assert window.is_dirty is True
+
+    def test_el_nombre_por_defecto_no_pisa_una_exportacion_anterior(
+        self, qtbot: QtBot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        window = build_window(qtbot, FakePdfEngine(make_pages(1)))
+        open_ready(qtbot, window, tmp_path)
+        (tmp_path / "documento-editado.pdf").write_bytes(b"EXPORTACION ANTERIOR")
+        offered: list[str] = []
+
+        def choose(_parent: object, _title: str, directory: str, *_args: object) -> tuple[str, str]:
+            offered.append(directory)
+            return ("", "")
+
+        monkeypatch.setattr(QFileDialog, "getSaveFileName", choose)
+
+        assert window._export_as() is False
+
+        assert Path(offered[0]).name == "documento-editado-2.pdf"
+
     def test_el_cierre_permite_guardar_una_copia(
         self, qtbot: QtBot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
