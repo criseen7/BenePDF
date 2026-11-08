@@ -41,11 +41,25 @@ textos e imágenes nuevos. Esto permite el flujo «redactar una región y escrib
 el texto corregido encima».
 
 Las coordenadas del modelo son las visibles (después de `/Rotate`). Antes de
-llamar a PyMuPDF se convierten con `rect * page.derotation_matrix`. Los nuevos
-elementos se giran para quedar derechos en la página visible:
+llamar a PyMuPDF se convierten teniendo en cuenta también el origen del
+CropBox:
 
-- texto: `rotate=(360 - page.rotation) % 360`;
-- imagen: `rotate=page.rotation`.
+```
+M  = Matrix(1, 0, 0, -1, -cropbox.x0, cropbox.y1) * page.rotation_matrix
+rect_pdf  = rect_visible * ~M
+rect_page = rect_pdf * page.transformation_matrix
+```
+
+Los nuevos elementos se giran para quedar derechos en la página visible:
+
+- texto: `rotate=page.rotation`;
+- imagen: `rotate=page.rotation`, con `keep_proportion=False`.
+
+La versión anterior usaba `rect * page.derotation_matrix` y
+`rotate=(360 - page.rotation) % 360` para el texto. Con esas fórmulas el texto
+salía invertido y las imágenes se desplazaban en páginas recortadas o rotadas;
+las pruebas de regresión de la iteración 4 cubren las cuatro rotaciones y un
+CropBox desplazado.
 
 ### Redacción de texto, vectores e imágenes
 
