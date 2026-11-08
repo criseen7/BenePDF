@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Final
 
@@ -40,7 +40,7 @@ from bene.application.use_cases.export_document import ExportDocument, ExportRes
 from bene.application.use_cases.open_document import OpenDocument
 from bene.application.use_cases.render_page import MAX_RENDER_PIXELS
 from bene.config import APP_NAME
-from bene.domain.editing import ImageObject, RedactionObject, TextObject, TextStyle
+from bene.domain.editing import EditObject, ImageObject, RedactionObject, TextObject, TextStyle
 from bene.domain.errors import BeneError, EncryptedDocumentError
 from bene.domain.models import DocumentInfo, PageInfo, PageKind, PdfRect
 from bene.presentation.dialogs.text_dialog import TextDialog
@@ -908,6 +908,7 @@ class MainWindow(QMainWindow):
         session = self._edit_session
         if session is None:
             self._canvas.set_objects(())
+            self._canvas.set_overflow_ids(())
             self._properties.set_object(None)
             self._undo_action.setEnabled(False)
             self._redo_action.setEnabled(False)
@@ -921,7 +922,9 @@ class MainWindow(QMainWindow):
         ):
             self._selected_object_id = None
 
-        self._canvas.set_objects(session.objects_on_page(self._page_index))
+        page_objects = session.objects_on_page(self._page_index)
+        self._canvas.set_objects(page_objects)
+        self._canvas.set_overflow_ids(self._overflow_ids(page_objects))
         selected = (
             session.object(self._selected_object_id)
             if self._selected_object_id is not None
@@ -934,6 +937,30 @@ class MainWindow(QMainWindow):
         self._status_edit.setText("Cambios sin exportar" if session.is_dirty else "Sin cambios")
         if self._canvas.selected_object_id != self._selected_object_id:
             self._canvas.select_object(self._selected_object_id)
+
+    def _overflow_ids(self, objects: Iterable[EditObject]) -> set[str]:
+        """Textos de la página que no caben según la medición del motor."""
+        document = self._document
+        if document is None:
+            return set()
+        overflow: set[str] = set()
+        for obj in objects:
+            if not isinstance(obj, TextObject):
+                continue
+            try:
+                measurement = document.measure_text(
+                    obj.page_index,
+                    text=obj.text,
+                    rect=obj.rect,
+                    font_name=obj.style.font_name,
+                    font_size=obj.style.font_size,
+                    alignment=obj.style.alignment,
+                )
+            except BeneError:
+                continue
+            if not measurement.fits:
+                overflow.add(obj.object_id)
+        return overflow
 
     def _on_selection_changed(self, object_id: object) -> None:
         selected = object_id if isinstance(object_id, str) else None
@@ -1183,6 +1210,15 @@ class MainWindow(QMainWindow):
         )
         return result
 
+    def _default_export_path(self, info: DocumentInfo) -> Path:
+        """Nombre de exportación que no pisa una copia anterior."""
+        candidate = info.path.with_name(f"{info.path.stem}-editado.pdf")
+        index = 2
+        while candidate.exists():
+            candidate = info.path.with_name(f"{info.path.stem}-editado-{index}.pdf")
+            index += 1
+        return candidate
+
     def _export_as(self) -> bool:
         info = self._document_info
         session = self._edit_session
@@ -1197,11 +1233,11 @@ class MainWindow(QMainWindow):
             )
             return False
 
-        default_name = f"{info.path.stem}-editado.pdf"
+        default_path = self._default_export_path(info)
         filename, _ = QFileDialog.getSaveFileName(
             self,
             "Exportar PDF",
-            str(info.path.with_name(default_name)),
+            str(default_path),
             "Documentos PDF (*.pdf)",
         )
         if not filename:
