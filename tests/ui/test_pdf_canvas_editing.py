@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import pytest
-from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QPoint, Qt
-from PySide6.QtGui import QColor, QImage, QImageWriter
+from PySide6.QtCore import QBuffer, QByteArray, QEvent, QIODevice, QPoint, QPointF, Qt
+from PySide6.QtGui import QColor, QImage, QImageWriter, QMouseEvent
+from PySide6.QtWidgets import QApplication
 from pytestqt.qtbot import QtBot
 
 from bene.domain.editing import ImageObject, RedactionObject, TextObject
@@ -21,16 +22,34 @@ def make_canvas(
     page_width: float = 200.0,
     page_height: float = 100.0,
     rotation: int = 0,
+    background: str = "#ffffff",
 ) -> PdfCanvas:
     mapper = CoordinateMapper(page_width, page_height, scale=1.0, view_rotation=rotation)
     image = QImage(round(mapper.view_width), round(mapper.view_height), QImage.Format.Format_RGB888)
-    image.fill(QColor("#ffffff"))
+    image.fill(QColor(background))
     canvas = PdfCanvas()
     qtbot.addWidget(canvas)
     canvas.set_image(image)
     canvas.set_mapper(mapper)
     canvas.show()
     return canvas
+
+
+def send_mouse_move(
+    widget: PdfCanvas,
+    position: QPoint,
+    modifiers: Qt.KeyboardModifier = Qt.KeyboardModifier.NoModifier,
+) -> None:
+    """Envía un movimiento con modificadores; ``qtbot.mouseMove`` no los admite."""
+    event = QMouseEvent(
+        QEvent.Type.MouseMove,
+        QPointF(position),
+        QPointF(widget.mapToGlobal(position)),
+        Qt.MouseButton.NoButton,
+        Qt.MouseButton.LeftButton,
+        modifiers,
+    )
+    QApplication.sendEvent(widget, event)
 
 
 def make_text(rect: PdfRect | None = None, text: str = "Hola") -> TextObject:
@@ -322,8 +341,67 @@ class TestTransformaciones:
 
         assert requests == [("texto-1", PdfRect(10, 20, 90, 90))]
 
+    def test_las_asas_siguen_al_preview_durante_el_arrastre(self, qtbot: QtBot) -> None:
+        canvas = make_canvas(qtbot, background="#e8e8e8")
+        canvas.set_objects([make_text()])
+        canvas.select_object("texto-1")
+
+        qtbot.mousePress(canvas, Qt.MouseButton.LeftButton, pos=QPoint(60, 80))
+        qtbot.mouseMove(canvas, QPoint(100, 90))
+
+        image = QImage(canvas.size(), QImage.Format.Format_RGB888)
+        image.fill(QColor("#000000"))
+        canvas.render(image)
+
+        # El asa inferior derecha se dibuja en la esquina nueva del preview.
+        assert image.pixelColor(100, 90).lightness() > 240
+        # La esquina antigua ya no conserva un asa blanca.
+        assert image.pixelColor(60, 80).lightness() < 240
+
+    def test_shift_conserva_la_proporcion_al_redimensionar(self, qtbot: QtBot) -> None:
+        canvas = make_canvas(qtbot, page_width=400.0, page_height=300.0)
+        canvas.set_objects([make_image(PdfRect(70, 10, 110, 30))])
+        canvas.select_object("imagen-1")
+        requests: list[tuple[str, PdfRect]] = []
+        canvas.transform_requested.connect(lambda oid, rect: requests.append((oid, rect)))
+
+        # Imagen de 40 x 20: el eje que más crece (vertical) marca la escala.
+        qtbot.mousePress(canvas, Qt.MouseButton.LeftButton, pos=QPoint(110, 30))
+        send_mouse_move(canvas, QPoint(170, 90), Qt.KeyboardModifier.ShiftModifier)
+        qtbot.mouseRelease(canvas, Qt.MouseButton.LeftButton, pos=QPoint(170, 90))
+
+        assert requests == [("imagen-1", PdfRect(70, 10, 230, 90))]
+        resized = requests[0][1]
+        assert resized.width / resized.height == pytest.approx(2.0)
+
+    def test_sin_shift_la_imagen_se_estira(self, qtbot: QtBot) -> None:
+        canvas = make_canvas(qtbot, page_width=400.0, page_height=300.0)
+        canvas.set_objects([make_image(PdfRect(70, 10, 110, 30))])
+        canvas.select_object("imagen-1")
+        requests: list[tuple[str, PdfRect]] = []
+        canvas.transform_requested.connect(lambda oid, rect: requests.append((oid, rect)))
+
+        qtbot.mousePress(canvas, Qt.MouseButton.LeftButton, pos=QPoint(110, 30))
+        qtbot.mouseMove(canvas, QPoint(170, 90))
+        qtbot.mouseRelease(canvas, Qt.MouseButton.LeftButton, pos=QPoint(170, 90))
+
+        assert requests == [("imagen-1", PdfRect(70, 10, 170, 90))]
+
 
 class TestPintura:
+    def test_marca_el_texto_que_no_cabe(self, qtbot: QtBot) -> None:
+        canvas = make_canvas(qtbot)
+        canvas.set_objects([make_text()])
+        canvas.set_overflow_ids(["texto-1"])
+
+        image = QImage(canvas.size(), QImage.Format.Format_RGB888)
+        image.fill(QColor("#000000"))
+        canvas.render(image)
+
+        assert canvas.overflow_ids == frozenset({"texto-1"})
+        border = [image.pixelColor(x, 20) for x in range(10, 61)]
+        assert any(color.red() > 180 and color.green() < 140 for color in border)
+
     def test_pinta_el_texto_anadido(self, qtbot: QtBot) -> None:
         canvas = make_canvas(qtbot)
         canvas.set_objects([make_text()])
