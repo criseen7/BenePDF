@@ -114,6 +114,42 @@ def test_flujo_real_de_miniaturas_y_edicion(
     assert window.edit_session is None
 
 
+def test_flujo_real_con_pagina_recortada_y_rotada(qtbot: QtBot, tmp_path: Path) -> None:
+    path = synthetic.make_cropped_rotated_pdf(tmp_path / "recortado.pdf", rotation=90)
+    original_bytes = path.read_bytes()
+    destination = tmp_path / "exportado.pdf"
+
+    window = MainWindow(
+        open_document=OpenDocument(PyMuPDFEngine()),
+        renderer_factory=RenderPage,
+    )
+    qtbot.addWidget(window)
+    window.resize(1100, 850)
+    window.show()
+
+    assert window.open_path(path) is True
+    qtbot.waitUntil(
+        lambda: window.canvas.has_image and window.activity == "Listo",
+        timeout=TIMEOUT_MS,
+    )
+
+    text = window.add_text_object(PdfRect(50, 50, 400, 100), "RECORTADA Y ROTADA")
+    assert isinstance(text, TextObject)
+    image = window.add_image_object(PdfRect(50, 150, 250, 250), png_bytes(), "image/png")
+    assert isinstance(image, ImageObject)
+
+    result = window.export_document(destination)
+
+    assert result is not None
+    assert path.read_bytes() == original_bytes
+    with pymupdf.open(destination) as document:
+        page = document[0]
+        assert page.rotation == 90
+        assert "RECORTADA Y ROTADA" in page.get_text("text")
+        assert len(page.get_images()) == 1
+    window.close_document()
+
+
 def test_flujo_real_de_redaccion_y_exportacion(qtbot: QtBot, tmp_path: Path) -> None:
     path = synthetic.make_text_pdf(tmp_path / "real.pdf", title="Smoke de redacción")
     original_bytes = path.read_bytes()
