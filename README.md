@@ -182,7 +182,7 @@ También se puede generar un único archivo con `--onefile`, aunque tarda más e
 - La rotación de vista no se guarda en el archivo.
 - La redacción puede afectar a objetos que se solapen con la región marcada; revísala antes de exportar.
 - Si una página concreta no se puede renderizar, se muestra un aviso y el detalle queda en el registro.
-- La interfaz se ha verificado en modo offscreen y en Windows; falta una revisión visual con pantalla real, DPI y lector de pantalla antes de una versión distribuible.
+- La interfaz se ha verificado en modo offscreen sobre Windows (y en CI sobre Ubuntu); falta una revisión visual con pantalla real, DPI y lector de pantalla antes de una versión distribuible.
 - Linux se prueba en CI en modo offscreen, pero no se ha validado visualmente.
 - El ejecutable incluye Qt y MuPDF, así que ocupa cientos de MB. Es el coste de no exigir Python en la máquina de destino.
 - La comprobación del ejecutable en CI se limita a `--version` y a la presencia de recursos; abrir, editar y exportar en una máquina Windows limpia sigue siendo una prueba manual pendiente.
