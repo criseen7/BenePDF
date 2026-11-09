@@ -2,7 +2,7 @@
 
 Aplicación de escritorio para visualizar, organizar y editar documentos PDF sin subir nada a servicios externos.
 
-El proyecto está en fase de construcción: la iteración 1 cubre apertura, visualización, navegación, zoom, rotación de vista y detección de páginas escaneadas. La iteración 2 añade miniaturas, selección de región, texto e imágenes, transformaciones y deshacer/rehacer, todo en memoria. La iteración 3 añade redacción permanente y exportación segura a un archivo nuevo.
+El proyecto está en fase de construcción. Las iteraciones 1 a 3 cubren la apertura, la visualización, la navegación, el zoom, la rotación de vista, las miniaturas, la edición en memoria de texto e imágenes, la redacción permanente y la exportación segura a un archivo nuevo. La iteración 4 corrige el redimensionado y la exportación en páginas rotadas o recortadas, embebe las fuentes y avisa del texto que no cabe. La iteración 5 añade errores de exportación accionables, accesibilidad por teclado, pruebas con documentos de 100 páginas, empaquetado con PyInstaller e integración continua.
 
 - Requisitos y criterios de aceptación: [docs/requirements.md](docs/requirements.md)
 - Plan de trabajo y estado: [PLAN.md](PLAN.md)
@@ -131,6 +131,48 @@ Si el archivo no existe, está dañado, no es un PDF o no se puede leer, la apli
 
 El registro rota a 2 MB, conserva tres copias y nunca contiene el texto del documento.
 
+### Accesibilidad y teclado
+
+- Todos los controles principales tienen nombre y descripción accesibles: ventana, lienzo, navegación, selector de página, miniaturas, diálogo de texto y panel de propiedades.
+- Las etiquetas del formulario están asociadas a su campo y el recorrido con `Tab` sigue un orden lógico: navegación → miniaturas → lienzo, y texto → fuente → tamaño → color → alineación en el diálogo.
+- Cada miniatura anuncia «Página N» y su tooltip indica a qué página lleva.
+- El lienzo tiene foco explícito y actualiza su descripción con la página, el tipo y las dimensiones.
+
+La comprobación automática cubre nombres, etiquetas y orden de tabulación. Antes de una versión distribuible conviene revisarla con un lector de pantalla real (Narrador en Windows u Orca en Linux).
+
+### Documentos grandes
+
+La suite incluye pruebas con PDFs sintéticos de **100 páginas de texto** y **100 páginas escaneadas**. Comprueban la apertura, la clasificación de la primera y la última página y el render de ambos extremos. Están marcadas como `slow` y no se ejecutan en la suite rápida:
+
+```powershell
+pytest -m slow
+```
+
+### Empaquetar un ejecutable
+
+El ejecutable se construye con PyInstaller y el extra `build`:
+
+```powershell
+python -m pip install -e ".[dev,build]"
+python scripts/build_app.py
+```
+
+El resultado queda en `dist\BenePDF\BenePDF.exe`. El comando incluye las fuentes Liberation, los binarios de MuPDF y los plugins de Qt. Para revisar el comando sin construirlo:
+
+```powershell
+python scripts/build_app.py --dry-run
+```
+
+También se puede generar un único archivo con `--onefile`, aunque tarda más en arrancar. El ejecutable no necesita Python instalado en la máquina de destino.
+
+### Integración continua
+
+`.github/workflows/ci.yml` ejecuta en cada push y pull request:
+
+- **Windows y Ubuntu:** `ruff check`, `ruff format --check`, `mypy` y `pytest` con `QT_QPA_PLATFORM=offscreen`.
+- **Windows:** cobertura, pruebas lentas (`pytest -m slow`) y construcción del ejecutable.
+- El artefacto `BenePDF-windows` se publica al final del trabajo de empaquetado.
+
 ### Limitaciones de esta iteración
 
 - Los cambios de edición viven en memoria hasta que se exportan; el PDF original nunca se modifica.
@@ -140,18 +182,26 @@ El registro rota a 2 MB, conserva tres copias y nunca contiene el texto del docu
 - La rotación de vista no se guarda en el archivo.
 - La redacción puede afectar a objetos que se solapen con la región marcada; revísala antes de exportar.
 - Si una página concreta no se puede renderizar, se muestra un aviso y el detalle queda en el registro.
+- La interfaz se ha verificado en modo offscreen y en Windows; falta una revisión visual con pantalla real, DPI y lector de pantalla antes de una versión distribuible.
+- Linux se prueba en CI en modo offscreen, pero no se ha validado visualmente.
+- El ejecutable incluye Qt y MuPDF, así que ocupa cientos de MB. Es el coste de no exigir Python en la máquina de destino.
+- La comprobación del ejecutable en CI se limita a `--version` y a la presencia de recursos; abrir, editar y exportar en una máquina Windows limpia sigue siendo una prueba manual pendiente.
 
 ## Comandos
 
 ```powershell
 bene                    # abre la aplicación
 bene documento.pdf      # abre un PDF al iniciar
-pytest                  # pruebas
+pytest                  # pruebas rápidas
+pytest -m slow          # documentos grandes y rendimiento
+pytest -m ui            # solo interfaz
 ruff check .            # lint
 ruff format .           # formato
 mypy                    # tipado estático
-python scripts/verify_env.py   # comprueba Python, PyMuPDF y Qt
+python scripts/verify_env.py      # comprueba Python, PyMuPDF y Qt
 python scripts/benchmark_open.py  # mide el criterio de rendimiento RNF-001
+python scripts/build_app.py       # construye dist/BenePDF
+python scripts/build_app.py --dry-run  # muestra el comando de PyInstaller
 ```
 
 Para ejecutar la interfaz en un entorno sin pantalla (CI):

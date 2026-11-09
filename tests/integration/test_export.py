@@ -55,15 +55,9 @@ def colored_png_bytes(width: int = 100, height: int = 50) -> bytes:
     """PNG con un color distinto en cada esquina para detectar la orientación."""
     document = pymupdf.open()
     page = document.new_page(width=width, height=height)
-    page.draw_rect(
-        pymupdf.Rect(0, 0, width / 2, height / 2), color=(1, 0, 0), fill=(1, 0, 0)
-    )
-    page.draw_rect(
-        pymupdf.Rect(width / 2, 0, width, height / 2), color=(0, 0, 1), fill=(0, 0, 1)
-    )
-    page.draw_rect(
-        pymupdf.Rect(0, height / 2, width / 2, height), color=(0, 1, 0), fill=(0, 1, 0)
-    )
+    page.draw_rect(pymupdf.Rect(0, 0, width / 2, height / 2), color=(1, 0, 0), fill=(1, 0, 0))
+    page.draw_rect(pymupdf.Rect(width / 2, 0, width, height / 2), color=(0, 0, 1), fill=(0, 0, 1))
+    page.draw_rect(pymupdf.Rect(0, height / 2, width / 2, height), color=(0, 1, 0), fill=(0, 1, 0))
     pixmap = page.get_pixmap(alpha=False)
     document.close()
     return pixmap.tobytes("png")
@@ -97,9 +91,7 @@ def dark_bbox(image: pymupdf.Pixmap, rect: pymupdf.Rect) -> tuple[int, int, int,
     return (min_x, min_y, max_x + 1, max_y + 1)
 
 
-def non_white_bbox(
-    image: pymupdf.Pixmap, rect: pymupdf.Rect
-) -> tuple[int, int, int, int] | None:
+def non_white_bbox(image: pymupdf.Pixmap, rect: pymupdf.Rect) -> tuple[int, int, int, int] | None:
     """Caja de píxeles no blancos dentro de ``rect`` (coordenadas de la imagen)."""
     x0 = max(0, round(rect.x0))
     y0 = max(0, round(rect.y0))
@@ -214,9 +206,7 @@ class TestExportacion:
             pixmap = page.get_pixmap(alpha=False)
             assert dark_bbox(pixmap, pymupdf.Rect(60, 60, 240, 140)) is not None
 
-    def test_conserva_el_euro_y_los_acentos(
-        self, engine: PyMuPDFEngine, tmp_path: Path
-    ) -> None:
+    def test_conserva_el_euro_y_los_acentos(self, engine: PyMuPDFEngine, tmp_path: Path) -> None:
         source = synthetic.make_empty_pdf(tmp_path / "original.pdf")
         destination = tmp_path / "unicode.pdf"
         obj = TextObject(
@@ -338,6 +328,98 @@ class TestExportacion:
         assert not (tmp_path / "copia.pdf").exists()
 
 
+class TestFallosDelSistemaDeArchivos:
+    @pytest.mark.parametrize(
+        "error",
+        [
+            PermissionError(13, "Permiso denegado"),
+            OSError(28, "No queda espacio en el dispositivo"),
+        ],
+    )
+    def test_un_fallo_al_crear_el_temporal_es_accionable(
+        self,
+        engine: PyMuPDFEngine,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        error: OSError,
+    ) -> None:
+        source = synthetic.make_text_pdf(tmp_path / "original.pdf")
+        destination = tmp_path / "copia.pdf"
+
+        def fallar(*_args: object, **_kwargs: object) -> tuple[int, str]:
+            raise error
+
+        monkeypatch.setattr("bene.infrastructure.pdf.pymupdf_engine.tempfile.mkstemp", fallar)
+
+        with (
+            closing(engine.open_document(source)) as document,
+            pytest.raises(ExportError) as info,
+        ):
+            document.export_to(destination, objects=())
+
+        message = str(info.value)
+        assert "No se pudo crear el archivo temporal" in message
+        assert str(tmp_path) in message
+        assert str(error) in message
+        assert "permisos" in message.lower()
+        assert "espacio" in message.lower()
+        assert not destination.exists()
+
+    @pytest.mark.parametrize(
+        "error",
+        [
+            PermissionError(13, "Permiso denegado"),
+            OSError(28, "No queda espacio en el dispositivo"),
+        ],
+    )
+    def test_un_fallo_al_reemplazar_el_destino_no_lo_dana(
+        self,
+        engine: PyMuPDFEngine,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        error: OSError,
+    ) -> None:
+        source = synthetic.make_text_pdf(tmp_path / "original.pdf")
+        destination = tmp_path / "existente.pdf"
+        destination.write_bytes(b"CONTENIDO ANTERIOR")
+
+        def fallar(_self: Path, _target: Path) -> Path:
+            raise error
+
+        monkeypatch.setattr(Path, "replace", fallar)
+
+        with (
+            closing(engine.open_document(source)) as document,
+            pytest.raises(ExportError) as info,
+        ):
+            document.export_to(destination, objects=())
+
+        message = str(info.value)
+        assert str(error) in message
+        assert "permisos" in message.lower()
+        assert "espacio" in message.lower()
+        assert "no se ha modificado" in message.lower()
+        assert destination.read_bytes() == b"CONTENIDO ANTERIOR"
+        assert sorted(path.name for path in tmp_path.iterdir()) == [
+            "existente.pdf",
+            "original.pdf",
+        ]
+
+    def test_exporta_a_una_ruta_unicode_con_espacios(
+        self, engine: PyMuPDFEngine, tmp_path: Path
+    ) -> None:
+        source = synthetic.make_text_pdf(tmp_path / "original.pdf")
+        folder = tmp_path / "carpeta con espacios"
+        folder.mkdir()
+        destination = folder / "copia final (versión 2).pdf"
+
+        export(engine, source, destination, ())
+
+        assert destination.is_file()
+        with pymupdf.open(destination) as document:
+            assert document.page_count == 1
+
+
 class TestPaginasRotadas:
     @pytest.mark.parametrize("rotation", [0, 90, 180, 270])
     def test_el_texto_nuevo_queda_horizontal_y_en_su_region(
@@ -454,9 +536,7 @@ class TestPaginasRotadas:
             pixmap = page.get_pixmap(alpha=False)
             bbox = non_white_bbox(pixmap, pymupdf.Rect(0, 0, pixmap.width, pixmap.height))
             assert bbox is not None
-            assert bbox == pytest.approx(
-                (visible.x0, visible.y0, visible.x1, visible.y1), abs=1
-            )
+            assert bbox == pytest.approx((visible.x0, visible.y0, visible.x1, visible.y1), abs=1)
 
             # La orientación de la imagen no se invierte al rotar la página.
             x0, y0, x1, y1 = bbox

@@ -119,6 +119,8 @@ class PdfCanvas(QWidget):
         self.setFixedSize(PLACEHOLDER_SIZE)
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setAccessibleName("Página del documento")
+        self.setAccessibleDescription(PLACEHOLDER_MESSAGE)
 
     # ------------------------------------------------------------- propiedades
 
@@ -176,6 +178,7 @@ class PdfCanvas(QWidget):
 
     def set_message(self, message: str) -> None:
         self._message = message
+        self.setAccessibleDescription(message)
         self.update()
 
     def set_mapper(self, mapper: CoordinateMapper | None) -> None:

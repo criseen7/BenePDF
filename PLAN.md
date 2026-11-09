@@ -1,7 +1,7 @@
 # PLAN — Bene PDF
 
-- **Estado:** iteración 4 implementada y verificada en modo offscreen
-- **Última actualización:** 2026-11-07
+- **Estado:** iteración 5 implementada y verificada; ejecutable construido
+- **Última actualización:** 2026-11-08
 - **Especificación de referencia:** [docs/requirements.md](docs/requirements.md)
 
 ## 1. Decisiones adoptadas
@@ -16,6 +16,8 @@
 | Modelo de edición | Comandos inmutables en memoria; el PDF fuente nunca se modifica | Deshacer/rehacer correcto y cumplimiento de RN-001 y RN-008 |
 | Persistencia | Nada se guarda hasta exportar; la exportación escribe a temporal y valida | Integridad del archivo original (RNF-005) |
 | Redacción | Se aplica antes que el contenido nuevo; texto y vectores se eliminan, las imágenes se redactan por píxeles | Permite «redactar y escribir encima» sin destruir escaneos completos (RN-004, RNF-008) |
+| Empaquetado | PyInstaller 6 en modo carpeta (`--onedir`) | Incluye Qt, MuPDF y fuentes sin exigir Python en destino (RNF-016) |
+| CI | GitHub Actions en Windows y Ubuntu, pruebas lentas aparte | Detecta regresiones de plataforma y mantiene la suite rápida (RNF-017) |
 | Miniaturas | Iteración 2 | Mantener la primera iteración pequeña y verificable |
 
 Las decisiones con consecuencias arquitectónicas se documentan en `docs/decisions/`.
@@ -291,20 +293,100 @@ tocar la implementación.
 7. Un fallo de exportación nunca deja un destino que parezca actualizado.
 8. `pytest`, `ruff` y `mypy` en verde.
 
-## 6. Estructura objetivo
+## 6. Iteración 5 — calidad, accesibilidad, PDFs grandes y distribución
+
+**Objetivo verificable:** que la aplicación se pueda construir como ejecutable,
+que los errores del sistema de archivos sean accionables, que la interfaz se
+pueda recorrer con el teclado y que un documento de 100 páginas se abra y
+renderice sin problemas. Todo con integración continua en Windows y Ubuntu.
+
+### Paso 1 — Errores de exportación accionables
+
+- [x] Pruebas en rojo para `PermissionError` y disco lleno al crear el temporal
+- [x] Pruebas en rojo para fallos al reemplazar el destino
+- [x] Mensaje con la carpeta, el error del sistema y qué comprobar
+- [x] El destino anterior nunca se modifica y el temporal se elimina
+- [x] Exportación correcta a rutas Unicode con espacios
+
+### Paso 2 — Accesibilidad
+
+- [x] Nombres y descripciones accesibles en la ventana y el lienzo
+- [x] Nombres en navegación, selector de página y miniaturas
+- [x] Etiqueta **Texto** asociada al editor con `setBuddy`
+- [x] Nombres accesibles en fuente, tamaño, color y alineación
+- [x] Nombres accesibles en coordenadas, tamaño y botón de aplicar
+- [x] Orden de tabulación explícito en navegación, diálogo y propiedades
+- [x] Cada miniatura anuncia «Página N» y su tooltip
+- [x] El lienzo mantiene `StrongFocus` y actualiza su descripción con la página
+
+### Paso 3 — Documentos grandes
+
+- [x] PDF sintético de 100 páginas de texto: apertura, clasificación y render de los extremos
+- [x] PDF sintético de 100 páginas escaneadas: apertura, clasificación y render de los extremos
+- [x] Marcador `slow` y exclusión de la suite rápida
+- [x] CI ejecuta `pytest -m slow` en un trabajo aparte
+
+### Paso 4 — Empaquetado
+
+- [x] Extra `build` con PyInstaller
+- [x] `scripts/build_app.py` con `--onedir`, `--onefile` y `--dry-run`
+- [x] Inclusión de las fuentes Liberation con `--add-data`
+- [x] Inclusión de MuPDF con `--collect-all pymupdf`
+- [x] Pruebas del comando, la ruta de salida y los errores accionables
+- [x] Build real verificado: `dist/BenePDF/BenePDF.exe --version`
+- [x] Comprobado que las fuentes y `pymupdf` están dentro de `_internal`
+
+### Paso 5 — Integración continua
+
+- [x] `.github/workflows/ci.yml` para Windows y Ubuntu
+- [x] `ruff check`, `ruff format --check`, `mypy` y `pytest` offscreen
+- [x] Cobertura publicada como artefacto
+- [x] Trabajo de pruebas lentas
+- [x] Trabajo de empaquetado con comprobación del `.exe` y artefacto descargable
+
+### Paso 6 — Cierre documental
+
+- [x] ADR-005 de empaquetado y CI
+- [x] README con accesibilidad, documentos grandes, build y CI
+- [x] PLAN actualizado con la iteración 5 y la bitácora
+- [x] `pytest`, `ruff` y `mypy` en verde
+
+### Criterios de verificación de la iteración 5
+
+1. Un fallo de permisos o de espacio al exportar muestra un mensaje que indica
+   la carpeta y qué comprobar; el destino anterior queda intacto.
+2. Los controles principales tienen nombre accesible y el recorrido con Tab
+   sigue un orden lógico en la ventana, el diálogo de texto y las propiedades.
+3. Los documentos de 100 páginas, de texto y escaneados, se abren, clasifican y
+   renderizan sin agotar memoria.
+4. `python scripts/build_app.py` genera un ejecutable que arranca y contiene las
+   fuentes y los binarios de MuPDF.
+5. CI ejecuta lint, formato, tipado, pruebas y build en Windows y Ubuntu.
+6. La suite rápida sigue en verde y las pruebas lentas se ejecutan aparte.
+7. `pytest`, `ruff` y `mypy` en verde.
+
+## 7. Estructura objetivo
 
 ```text
 EditorPDF-Local/
 ├── PLAN.md
 ├── README.md
 ├── pyproject.toml
+├── .github/
+│   └── workflows/
+│       └── ci.yml            # calidad, pruebas lentas y empaquetado
 ├── docs/
 │   ├── requirements.md
 │   └── decisions/
 │       ├── ADR-001-motor-pdf.md
 │       ├── ADR-002-modelo-de-edicion.md
 │       ├── ADR-003-exportacion-y-redaccion.md
-│       └── ADR-004-fuentes-embebidas.md
+│       ├── ADR-004-fuentes-embebidas.md
+│       └── ADR-005-empaquetado-y-ci.md
+├── scripts/
+│   ├── build_app.py          # PyInstaller con fuentes y MuPDF
+│   ├── benchmark_open.py
+│   └── verify_env.py
 ├── src/bene/
 │   ├── main.py
 │   ├── bootstrap.py
@@ -331,7 +413,7 @@ EditorPDF-Local/
     └── fixtures/
 ```
 
-## 7. Criterios de verificación de la iteración 1
+## 8. Criterios de verificación de la iteración 1
 
 1. `pytest` en verde en Windows (unitarias, integración y UI offscreen).
 2. `ruff check` y `ruff format --check` sin errores.
@@ -340,7 +422,7 @@ EditorPDF-Local/
 5. PDF corrupto, cifrado y escaneado: mensajes claros y sin cierre inesperado.
 6. El log existe, rota y no contiene texto del documento.
 
-## 8. Criterios de verificación de la iteración 2
+## 9. Criterios de verificación de la iteración 2
 
 1. Las cuatro rotaciones de vista convierten pantalla ↔ PDF sin desfases y la ida y vuelta conserva el punto.
 2. Se puede añadir, mover, redimensionar y eliminar texto e imágenes con la vista previa actualizada.
@@ -349,7 +431,7 @@ EditorPDF-Local/
 5. El PDF original no se modifica y no se escribe ningún archivo.
 6. `pytest`, `ruff` y `mypy` en verde y smoke real offscreen correcto.
 
-## 9. Criterios de verificación de la iteración 3
+## 10. Criterios de verificación de la iteración 3
 
 1. El texto de una región redactada no se puede extraer del archivo exportado.
 2. El PDF original conserva exactamente sus bytes y nunca se sobrescribe.
@@ -360,26 +442,31 @@ EditorPDF-Local/
 7. Los PDF cifrados se rechazan de forma explícita y no se degrada su protección.
 8. `pytest`, `ruff` y `mypy` en verde y smoke real offscreen correcto.
 
-## 10. Riesgos abiertos
+## 11. Riesgos abiertos
 
 | Riesgo | Impacto | Mitigación |
 |---|---|---|
 | PyMuPDF 2.0 es muy reciente | Alto | Versión fijada `>=2.0,<3`; plan B: `1.28.2` con el parche de redacción |
 | La vista previa por capas no reproduce el resultado exacto | Medio | Botón de vista previa exacta aplicando comandos a una copia en memoria |
 | Redacción puede eliminar objetos solapados | Alto | Vista previa con la zona marcada, confirmación explícita y pruebas con objetos cercanos |
-| Rendimiento en PDF escaneados de gran tamaño | Medio | Render bajo demanda, caché acotada y tareas en segundo plano |
+| Rendimiento en PDF escaneados de gran tamaño | Medio | Render bajo demanda, caché acotada y tareas en segundo plano; prueba de 100 páginas marcada `slow` |
+| El ejecutable incluye Qt y MuPDF y ocupa cientos de MB | Medio | Modo carpeta; el tamaño es el precio de no exigir Python en destino |
+| El build depende de hooks de PyInstaller para PySide6/PyMuPDF | Medio | `--collect-all pymupdf`, comprobación de fuentes y `--version` en CI |
+| La accesibilidad automática no equivale a un lector de pantalla | Medio | Nombres, etiquetas y orden de tabulación probados; falta revisión manual con Narrador/Orca |
+| Linux no se ha probado visualmente | Bajo | CI ejecuta pruebas offscreen en Ubuntu con las bibliotecas de Qt |
 
-## 11. Backlog posterior
+## 12. Backlog posterior
 
 | Iteración | Contenido |
 |---|---|
 | 2 | Miniaturas, selección de región, conversión de coordenadas, añadir texto e imágenes, mover/redimensionar, historial deshacer/rehacer |
 | 3 | **Completada:** redacción permanente con confirmación, exportación atómica a un archivo nuevo y pruebas de no extracción |
 | 4 | **Completada:** corrección del redimensionado y de la exportación en páginas rotadas/recortadas, fuentes embebidas y avisos de overflow |
-| 5 | Mensajes de error, accesibilidad, PDFs grandes, empaquetado con PyInstaller |
-| 6 | OCR local opcional, búsqueda, operaciones de páginas |
+| 5 | **Completada:** errores de exportación accionables, accesibilidad, PDFs de 100 páginas, PyInstaller, CI en Windows/Ubuntu y ADR-005 |
+| 6 | Búsqueda de texto, información del documento, operaciones de páginas (rotar, reordenar, eliminar, extraer), reemplazo de imagen |
+| 7 | OCR local opcional y comparación antes/después |
 
-## 12. Bitácora
+## 13. Bitácora
 
 | Fecha | Avance |
 |---|---|
@@ -398,8 +485,9 @@ EditorPDF-Local/
 | 2026-10-26 | Iteración 3, pasos 4 y 5: acciones Exportar/Redactar, confirmaciones al marcar y al exportar, aviso Guardar/Descartar/Cancelar y estado limpio. Smoke real con redacción y exportación. README, PLAN y ADR-003 actualizados. 403 pruebas en verde. |
 | 2026-11-07 | Iteración 4 iniciada: plan de corrección del redimensionado y de la exportación. Diagnóstico confirmado (asas desfasadas, `rotate` invertido, métricas Qt/PyMuPDF, `€` no soportado, destino obsoleto y CropBox+rotación). Paso 0: pruebas de regresión con 9 fallos esperados. |
 | 2026-11-07 | Iteración 4 completada. Asas e hit-test sobre el preview, **Shift** conserva la proporción y sin Shift la imagen se estira; `rotate=page.rotation`; fuentes Liberation embebidas con *fallback* a Base-14; `measure_text` y aviso de overflow; nombre de exportación sin colisiones y aviso de destino intacto; transformación visible→página con CropBox y `/Rotate` para texto, imagen y redacción. ADR-004, requisitos y README actualizados. 437 pruebas en verde, `ruff` y `mypy` sin errores. |
+| 2026-11-08 | Iteración 5 completada. Errores de exportación accionables para permisos, disco lleno y fallo de reemplazo, con el destino intacto; nombres accesibles, etiquetas asociadas y orden de tabulación en ventana, diálogo, propiedades y miniaturas; pruebas de 100 páginas de texto y escaneadas marcadas `slow`; `scripts/build_app.py` y extra `build`; CI para Windows y Ubuntu con trabajos de calidad, lentas y empaquetado; ADR-005, README y PLAN actualizados. Ejecutable `dist/BenePDF/BenePDF.exe` construido y verificado con `--version`. |
 
-## 13. Notas de entorno
+## 14. Notas de entorno
 
 - El paquete y el comando se llaman `bene`. El bloque de estructura de `docs/requirements.md` todavía usa `pdf-studio-local`/`pdf_studio` porque es el documento original del usuario; este plan y el código usan `bene`.
 - **Desviación del plan original:** las rutas se calculan con la biblioteca estándar (`LOCALAPPDATA` en Windows; `XDG_DATA_HOME`/`XDG_STATE_HOME` en Linux) y no con `QStandardPaths`. Motivo: mantener `config.py`, el registro y `bootstrap.py` libres de Qt, de modo que se puedan probar sin `QApplication` y que el arranque no dependa de la inicialización gráfica. En Windows la ubicación es la misma que daría Qt: `%LOCALAPPDATA%\bene-pdf`.
@@ -407,4 +495,7 @@ EditorPDF-Local/
 - El repositorio usa identidad git local `Crise <crise@localhost>`; cámbiala con `git config user.name` / `git config user.email` si vas a publicarlo.
 - Windows: `py -3.12 -m venv .venv`, luego `python -m pip install -e ".[dev]"`.
 - Las comprobaciones se lanzan desde WSL llamando al Python de Windows: `.venv/Scripts/python.exe`.
-- Tamaño del entorno completo: 992 MB (PySide6 653 MB, PyMuPDF 105 MB y sus extras 99 MB). El `.exe` final será mucho menor.
+- Tamaño del entorno completo: 992 MB (PySide6 653 MB, PyMuPDF 105 MB y sus extras 99 MB). Con PyInstaller instalado, el entorno crece otros ~20 MB.
+- El ejecutable se construye con `python scripts/build_app.py` y queda en `dist/BenePDF/` (ignorado por git). El modo `--onefile` está disponible, pero tarda más en arrancar.
+- Las pruebas lentas se ejecutan con `pytest -m slow`; la suite normal las excluye mediante `addopts`.
+- CI usa `QT_QPA_PLATFORM=offscreen` y, en Ubuntu, instala las bibliotecas de sistema que necesitan los wheels de PySide6.

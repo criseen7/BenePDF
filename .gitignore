@@ -31,3 +31,6 @@ Thumbs.db
 *.log
 logs/
 tests/fixtures/generated/
+
+# PyInstaller
+*.spec

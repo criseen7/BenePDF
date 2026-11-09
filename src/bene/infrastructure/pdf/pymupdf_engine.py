@@ -131,9 +131,7 @@ def _visible_rect_to_page(page: pymupdf.Page, rect: PdfRect) -> pymupdf.Rect:
     """
     visible = pymupdf.Rect(rect.x0, rect.y0, rect.x1, rect.y1)
     cropbox = page.cropbox
-    to_pdf = pymupdf.Matrix(
-        1, 0, 0, -1, -cropbox.x0, cropbox.y1
-    ) * page.rotation_matrix
+    to_pdf = pymupdf.Matrix(1, 0, 0, -1, -cropbox.x0, cropbox.y1) * page.rotation_matrix
     return visible * ~to_pdf * page.transformation_matrix
 
 
@@ -394,21 +392,35 @@ class PyMuPDFDocument:
             raise ExportError(f"No existe la carpeta de destino: {target.parent}")
 
     def _write_export(self, target: Path, objects: tuple[EditObject, ...]) -> None:
-        descriptor, temporary_name = tempfile.mkstemp(
-            prefix=f".{target.stem}-",
-            suffix=".pdf",
-            dir=target.parent,
-        )
-        os.close(descriptor)
-        temporary = Path(temporary_name)
-
         try:
+            descriptor, temporary_name = tempfile.mkstemp(
+                prefix=f".{target.stem}-",
+                suffix=".pdf",
+                dir=target.parent,
+            )
+        except OSError as error:
+            raise ExportError(
+                f"No se pudo crear el archivo temporal en {target.parent}: {error}\n\n"
+                "Comprueba que tienes permisos de escritura y espacio libre en el disco."
+            ) from error
+
+        temporary = Path(temporary_name)
+        try:
+            os.close(descriptor)
             self._build_export(temporary, objects)
             self._validate_export(temporary)
             temporary.replace(target)
         except ExportError as error:
             raise self._destination_error(error, target) from error
-        except Exception as error:  # el motor y el sistema pueden fallar de muchas formas
+        except OSError as error:
+            raise self._destination_error(
+                ExportError(
+                    f"No se pudo escribir el archivo exportado: {error}\n\n"
+                    "Comprueba que tienes permisos de escritura y espacio libre en el disco."
+                ),
+                target,
+            ) from error
+        except Exception as error:  # el motor puede fallar de muchas formas
             raise self._destination_error(
                 ExportError(f"No se pudo exportar el documento: {error}"), target
             ) from error

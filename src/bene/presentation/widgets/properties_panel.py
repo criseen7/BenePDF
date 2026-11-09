@@ -26,8 +26,10 @@ class ObjectPropertiesPanel(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._object: EditObject | None = None
+        self.setAccessibleName("Propiedades del objeto")
 
         self._title = QLabel("Sin selección", self)
+        self._title.setAccessibleName("Objeto seleccionado")
         self._title.setStyleSheet("font-weight: bold;")
         self._hint = QLabel("Posición y tamaño en puntos PDF.", self)
         self._hint.setWordWrap(True)
@@ -37,6 +39,10 @@ class ObjectPropertiesPanel(QWidget):
         self._y = self._coordinate_spin()
         self._width = self._size_spin()
         self._height = self._size_spin()
+        self._x.setAccessibleName("Coordenada X")
+        self._y.setAccessibleName("Coordenada Y")
+        self._width.setAccessibleName("Ancho")
+        self._height.setAccessibleName("Alto")
 
         form = QFormLayout()
         form.addRow("X:", self._x)
@@ -49,7 +55,13 @@ class ObjectPropertiesPanel(QWidget):
         self._preview.setStyleSheet("color: #343a40;")
 
         self._apply = QPushButton("Aplicar cambios", self)
+        self._apply.setAccessibleName("Aplicar cambios")
         self._apply.clicked.connect(self._emit_geometry)
+
+        QWidget.setTabOrder(self._x, self._y)
+        QWidget.setTabOrder(self._y, self._width)
+        QWidget.setTabOrder(self._width, self._height)
+        QWidget.setTabOrder(self._height, self._apply)
 
         layout = QVBoxLayout(self)
         layout.addWidget(self._title)

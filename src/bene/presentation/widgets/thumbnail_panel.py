@@ -18,6 +18,10 @@ class ThumbnailPanel(QListWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("panel_miniaturas")
+        self.setAccessibleName("Miniaturas de páginas")
+        self.setAccessibleDescription(
+            "Lista de páginas del documento; usa las flechas para moverte y Enter para abrir."
+        )
         self.setIconSize(THUMBNAIL_ICON_SIZE)
         self.setViewMode(QListWidget.ViewMode.ListMode)
         self.setMovement(QListWidget.Movement.Static)
@@ -35,6 +39,8 @@ class ThumbnailPanel(QListWidget):
         for index in range(max(0, count)):
             item = QListWidgetItem(str(index + 1))
             item.setData(Qt.ItemDataRole.UserRole, index)
+            item.setData(Qt.ItemDataRole.AccessibleTextRole, f"Página {index + 1}")
+            item.setToolTip(f"Ir a la página {index + 1}")
             item.setSizeHint(THUMBNAIL_ITEM_SIZE)
             item.setTextAlignment(Qt.AlignmentFlag.AlignHCenter)
             self.addItem(item)

@@ -32,22 +32,28 @@ class TextDialog(QDialog):
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Añadir texto")
+        self.setAccessibleName("Añadir texto")
+        self.setAccessibleDescription("Elige el contenido y el estilo del texto que vas a añadir.")
         self.setModal(True)
         self.resize(520, 420)
         current = style if style is not None else TextStyle()
 
         self._text = QPlainTextEdit(self)
+        self._text.setAccessibleName("Texto")
+        self._text.setAccessibleDescription("Contenido del cuadro de texto que se añadirá.")
         self._text.setPlaceholderText("Escribe el texto que quieres añadir…")
         self._text.setPlainText(text)
         self._text.textChanged.connect(self._update_ok)
 
         self._font = QComboBox(self)
+        self._font.setAccessibleName("Fuente")
         self._font.addItems(SUPPORTED_FONTS)
         index = self._font.findText(current.font_name)
         if index >= 0:
             self._font.setCurrentIndex(index)
 
         self._size = QDoubleSpinBox(self)
+        self._size.setAccessibleName("Tamaño")
         self._size.setRange(6.0, 200.0)
         self._size.setDecimals(1)
         self._size.setSingleStep(1.0)
@@ -56,16 +62,23 @@ class TextDialog(QDialog):
 
         self._color = QColor(current.color)
         self._color_button = QPushButton(self)
+        self._color_button.setAccessibleName("Color")
         self._color_button.clicked.connect(self._choose_color)
         self._update_color_button()
 
         self._alignment = QComboBox(self)
+        self._alignment.setAccessibleName("Alineación")
         self._alignment.addItem("Izquierda", TextAlignment.LEFT)
         self._alignment.addItem("Centro", TextAlignment.CENTER)
         self._alignment.addItem("Derecha", TextAlignment.RIGHT)
         alignment_index = self._alignment.findData(current.alignment)
         if alignment_index >= 0:
             self._alignment.setCurrentIndex(alignment_index)
+
+        QWidget.setTabOrder(self._text, self._font)
+        QWidget.setTabOrder(self._font, self._size)
+        QWidget.setTabOrder(self._size, self._color_button)
+        QWidget.setTabOrder(self._color_button, self._alignment)
 
         form = QFormLayout()
         form.addRow("Fuente:", self._font)
@@ -80,8 +93,12 @@ class TextDialog(QDialog):
         self._buttons.accepted.connect(self.accept)
         self._buttons.rejected.connect(self.reject)
 
+        text_label = QLabel("Texto:", self)
+        text_label.setObjectName("etiqueta_texto")
+        text_label.setBuddy(self._text)
+
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Texto:", self))
+        layout.addWidget(text_label)
         layout.addWidget(self._text, 1)
         layout.addLayout(form)
         layout.addWidget(self._buttons)

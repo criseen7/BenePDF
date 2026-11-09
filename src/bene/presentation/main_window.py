@@ -268,6 +268,10 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(APP_NAME)
         self.resize(1100, 850)
         self.setAcceptDrops(True)
+        self.setAccessibleName(APP_NAME)
+        self.setAccessibleDescription(
+            "Editor de PDF local: abre, edita y exporta documentos sin conexión."
+        )
 
         self._canvas = PdfCanvas()
         self._canvas.selection_changed.connect(self._on_selection_changed)
@@ -425,6 +429,10 @@ class MainWindow(QMainWindow):
         self._page_spin = QSpinBox(self)
         self._page_spin.setRange(1, 1)
         self._page_spin.setFixedWidth(76)
+        self._page_spin.setAccessibleName("Número de página")
+        self._page_spin.setAccessibleDescription(
+            "Escribe un número de página o usa las flechas para cambiarla."
+        )
         self._page_spin.setAlignment(Qt.AlignmentFlag.AlignRight)
         self._page_spin.valueChanged.connect(self._on_page_spin_changed)
 
@@ -432,12 +440,14 @@ class MainWindow(QMainWindow):
 
         self._previous_button = QToolButton(self)
         self._previous_button.setText("◀")
+        self._previous_button.setAccessibleName("Página anterior")
         self._previous_button.setToolTip("Página anterior (RePág)")
         self._previous_button.setShortcut(QKeySequence("PgUp"))
         self._previous_button.clicked.connect(self.previous_page)
 
         self._next_button = QToolButton(self)
         self._next_button.setText("▶")
+        self._next_button.setAccessibleName("Página siguiente")
         self._next_button.setToolTip("Página siguiente (AvPág)")
         self._next_button.setShortcut(QKeySequence("PgDown"))
         self._next_button.clicked.connect(self.next_page)
@@ -520,6 +530,11 @@ class MainWindow(QMainWindow):
         status.addPermanentWidget(self._status_edit)
         status.addPermanentWidget(self._status_zoom)
 
+        QWidget.setTabOrder(self._previous_button, self._page_spin)
+        QWidget.setTabOrder(self._page_spin, self._next_button)
+        QWidget.setTabOrder(self._next_button, self._thumbnails)
+        QWidget.setTabOrder(self._thumbnails, self._canvas)
+
     def _update_ui(self) -> None:
         has_document = self._document_info is not None
         for action in self._document_actions:
@@ -589,6 +604,7 @@ class MainWindow(QMainWindow):
             f"Página {self._page_index + 1} de {info.page_count} · "
             f"{kind} · {width:.0f} × {height:.0f} pt"
         )
+        self._canvas.setAccessibleDescription(self._status_page.text())
 
     # ------------------------------------------------------------- documento
 
