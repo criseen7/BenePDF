@@ -26,6 +26,7 @@ from typing import Protocol, runtime_checkable
 
 from bene.domain.editing import EditObject, TextAlignment
 from bene.domain.models import DocumentInfo, PageInfo, PdfRect
+from bene.domain.pages import PageArrangement
 
 BYTES_PER_PIXEL = 3
 """Los renders se entregan siempre como RGB de 8 bits por canal."""
@@ -71,6 +72,52 @@ class TextMeasurement:
     unsupported: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class SearchMatch:
+    """Coincidencia de texto localizada en una página.
+
+    ``rect`` está en coordenadas visibles de la página (rotación propia ya
+    aplicada), igual que los rectángulos de los objetos de edición.
+    """
+
+    page_index: int
+    rect: PdfRect
+    snippet: str = ""
+
+    def __post_init__(self) -> None:
+        if self.page_index < 0:
+            raise ValueError(f"Índice de página inválido: {self.page_index}")
+
+
+@dataclass(frozen=True, slots=True)
+class EmbeddedImage:
+    """Imagen ya incrustada en el PDF, candidata a reemplazo (RF-013).
+
+    ``image_id`` es opaco para el dominio: el adaptador decide cómo
+    identificarla. ``used_on_pages`` permite avisar cuando la misma imagen se
+    comparte entre varias páginas y el reemplazo afectaría a todas.
+    """
+
+    image_id: str
+    page_index: int
+    rect: PdfRect
+    pixel_width: int = 0
+    pixel_height: int = 0
+    used_on_pages: tuple[int, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not self.image_id.strip():
+            raise ValueError("El identificador de la imagen no puede estar vacío")
+        if self.page_index < 0:
+            raise ValueError(f"Índice de página inválido: {self.page_index}")
+        if self.pixel_width < 0 or self.pixel_height < 0:
+            raise ValueError("Las dimensiones de la imagen no pueden ser negativas")
+
+    @property
+    def is_shared(self) -> bool:
+        return len(self.used_on_pages) > 1
+
+
 class PdfEngine(Protocol):
     """Fábrica de sesiones de documento."""
 
@@ -100,6 +147,30 @@ class OpenedDocument(Protocol):
         """
         ...
 
+    def page_size(self, page_index: int) -> tuple[float, float]:
+        """Dimensiones visibles de la página, sin extraer texto ni clasificarla.
+
+        Es una consulta barata para el diálogo de información del documento
+        (RF-022). Errores esperados: :class:`PageOutOfRangeError`.
+        """
+        ...
+
+    def search_text(self, query: str) -> tuple[SearchMatch, ...]:
+        """Busca un texto en todas las páginas (RF-020).
+
+        Devuelve las coincidencias en orden de página y posición. La búsqueda
+        no distingue mayúsculas de minúsculas; en documentos escaneados sin OCR
+        no habrá resultados. Errores esperados: :class:`DocumentClosedError`.
+        """
+        ...
+
+    def images_on_page(self, page_index: int) -> tuple[EmbeddedImage, ...]:
+        """Imágenes incrustadas detectadas en una página (RF-013).
+
+        Errores esperados: :class:`PageOutOfRangeError`.
+        """
+        ...
+
     def render_page(self, page_index: int, *, scale: float, rotation: int = 0) -> RenderedPage:
         """Renderiza la página a la escala y rotación de vista indicadas.
 
@@ -107,13 +178,23 @@ class OpenedDocument(Protocol):
         """
         ...
 
-    def export_to(self, destination: Path, *, objects: Iterable[EditObject]) -> None:
+    def export_to(
+        self,
+        destination: Path,
+        *,
+        objects: Iterable[EditObject],
+        arrangement: PageArrangement | None = None,
+    ) -> None:
         """Escribe una copia nueva con las ediciones materializadas.
 
         La implementación no modifica el archivo original. Debe escribir a un
         archivo temporal, validar el resultado y reemplazar ``destination`` de
         forma atómica (RNF-005). Las redacciones se aplican antes que los
         textos e imágenes nuevos.
+
+        ``arrangement`` define el orden, las páginas conservadas y la rotación
+        adicional (RF-021). Si se omite, se conservan todas las páginas en su
+        orden original.
 
         Errores esperados: :class:`ExportError` y :class:`DocumentClosedError`.
         """

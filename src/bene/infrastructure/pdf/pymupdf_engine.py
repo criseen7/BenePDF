@@ -22,10 +22,16 @@ from typing import Any, Final, cast
 
 import pymupdf
 
-from bene.application.ports.pdf_engine import RenderedPage, TextMeasurement
+from bene.application.ports.pdf_engine import (
+    EmbeddedImage,
+    RenderedPage,
+    SearchMatch,
+    TextMeasurement,
+)
 from bene.domain.editing import (
     EditObject,
     ImageObject,
+    ImageReplacementObject,
     RedactionObject,
     TextAlignment,
     TextObject,
@@ -36,11 +42,14 @@ from bene.domain.errors import (
     DocumentNotFoundError,
     EncryptedDocumentError,
     ExportError,
+    ImageDetectionError,
     PageOutOfRangeError,
     RenderError,
+    SearchError,
     UnsupportedDocumentError,
 )
 from bene.domain.models import VALID_ROTATIONS, DocumentInfo, PageInfo, PageKind, PdfRect
+from bene.domain.pages import PageArrangement
 from bene.infrastructure.fonts import bundled_font_path, font_alias, normalized_font_name
 
 TEXT_CHAR_THRESHOLD: Final[int] = 20
@@ -135,6 +144,17 @@ def _visible_rect_to_page(page: pymupdf.Page, rect: PdfRect) -> pymupdf.Rect:
     return visible * ~to_pdf * page.transformation_matrix
 
 
+def _page_rect_to_visible(page: pymupdf.Page, rect: pymupdf.Rect) -> PdfRect:
+    """Convierte un rectángulo del espacio de la página al espacio visible.
+
+    ``search_for`` y ``get_image_info`` devuelven coordenadas sin rotación y
+    relativas al CropBox. ``rotation_matrix`` las lleva a la página tal como la
+    ve el usuario.
+    """
+    visible = pymupdf.Rect(rect) * page.rotation_matrix
+    return PdfRect(visible.x0, visible.y0, visible.x1, visible.y1)
+
+
 def _hex_to_rgb(color: str) -> tuple[float, float, float]:
     value = color.lstrip("#")
     return (
@@ -193,6 +213,25 @@ def _insert_text(page: pymupdf.Page, obj: TextObject) -> None:
             f"El texto del objeto {obj.object_id!r} no cabe en la página "
             f"{obj.page_index + 1}: faltan {abs(remaining):.1f} puntos de alto"
         )
+
+
+def _replace_embedded_image(page: pymupdf.Page, replacement: ImageReplacementObject) -> None:
+    """Sustituye una imagen incrustada conservando su posición y tamaño."""
+    try:
+        xref = int(replacement.image_id)
+    except ValueError as error:
+        raise ExportError(
+            f"La imagen {replacement.image_id!r} no tiene un identificador válido"
+        ) from error
+
+    try:
+        page.replace_image(xref, stream=replacement.data)
+    except Exception as error:
+        raise ExportError(
+            f"No se pudo reemplazar la imagen de la página {replacement.page_index + 1}. "
+            "El PDF puede compartirla, tenerla dentro de un formulario o no permitir "
+            f"su sustitución: {error}"
+        ) from error
 
 
 class PyMuPDFEngine:
@@ -286,6 +325,7 @@ class PyMuPDFDocument:
         self._info = info
         self._lock = threading.Lock()
         self._closed = False
+        self._image_usage_cache: dict[int, tuple[int, ...]] | None = None
 
     @property
     def info(self) -> DocumentInfo:
@@ -295,6 +335,74 @@ class PyMuPDFDocument:
         with self._lock:
             page = self._load_page(page_index)
             return self._build_page_info(page, page_index)
+
+    def page_size(self, page_index: int) -> tuple[float, float]:
+        with self._lock:
+            page = self._load_page(page_index)
+            # ``page.rect`` ya aplica /Rotate y el CropBox.
+            return (page.rect.width, page.rect.height)
+
+    def search_text(self, query: str) -> tuple[SearchMatch, ...]:
+        needle = query.strip()
+        if not needle:
+            return ()
+
+        with self._lock:
+            if self._closed:
+                raise DocumentClosedError()
+            matches: list[SearchMatch] = []
+            for page_index in range(self._document.page_count):
+                page = self._load_page(page_index)
+                try:
+                    hits = page.search_for(needle)
+                except Exception as error:  # el motor puede fallar con páginas dañadas
+                    raise SearchError(
+                        f"No se pudo buscar en la página {page_index + 1}: {error}"
+                    ) from error
+                for hit in hits:
+                    snippet = page.get_textbox(hit).strip().replace("\n", " ")
+                    matches.append(
+                        SearchMatch(
+                            page_index=page_index,
+                            rect=_page_rect_to_visible(page, hit),
+                            snippet=snippet[:120] or needle,
+                        )
+                    )
+            return tuple(matches)
+
+    def images_on_page(self, page_index: int) -> tuple[EmbeddedImage, ...]:
+        with self._lock:
+            page = self._load_page(page_index)
+            try:
+                infos = page.get_image_info(xrefs=True)
+            except Exception as error:
+                raise ImageDetectionError(page_index, str(error)) from error
+
+            usage = self._image_usage()
+            images: list[EmbeddedImage] = []
+            for info in infos:
+                xref = info.get("xref")
+                bbox = info.get("bbox")
+                if not isinstance(xref, int) or xref <= 0:
+                    # Imágenes en línea o sin referencia reemplazable.
+                    continue
+                if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
+                    continue
+                try:
+                    raw = pymupdf.Rect(*(float(value) for value in bbox))
+                except (TypeError, ValueError):
+                    continue
+                images.append(
+                    EmbeddedImage(
+                        image_id=str(xref),
+                        page_index=page_index,
+                        rect=_page_rect_to_visible(page, raw),
+                        pixel_width=int(info.get("width", 0) or 0),
+                        pixel_height=int(info.get("height", 0) or 0),
+                        used_on_pages=usage.get(xref, (page_index,)),
+                    )
+                )
+            return tuple(images)
 
     def render_page(self, page_index: int, *, scale: float, rotation: int = 0) -> RenderedPage:
         if not math.isfinite(scale) or scale <= 0:
@@ -332,15 +440,26 @@ class PyMuPDFDocument:
                 rotation=rotation,
             )
 
-    def export_to(self, destination: Path, *, objects: Iterable[EditObject]) -> None:
+    def export_to(
+        self,
+        destination: Path,
+        *,
+        objects: Iterable[EditObject],
+        arrangement: PageArrangement | None = None,
+    ) -> None:
         target = destination.expanduser().absolute()
         items = tuple(objects)
+        layout = (
+            arrangement
+            if arrangement is not None
+            else PageArrangement.initial(self._info.page_count)
+        )
 
         with self._lock:
             if self._closed:
                 raise DocumentClosedError()
             self._validate_destination(target)
-            self._write_export(target, items)
+            self._write_export(target, items, layout)
 
     def measure_text(
         self,
@@ -391,7 +510,12 @@ class PyMuPDFDocument:
         if not target.parent.is_dir():
             raise ExportError(f"No existe la carpeta de destino: {target.parent}")
 
-    def _write_export(self, target: Path, objects: tuple[EditObject, ...]) -> None:
+    def _write_export(
+        self,
+        target: Path,
+        objects: tuple[EditObject, ...],
+        arrangement: PageArrangement,
+    ) -> None:
         try:
             descriptor, temporary_name = tempfile.mkstemp(
                 prefix=f".{target.stem}-",
@@ -407,8 +531,8 @@ class PyMuPDFDocument:
         temporary = Path(temporary_name)
         try:
             os.close(descriptor)
-            self._build_export(temporary, objects)
-            self._validate_export(temporary)
+            self._build_export(temporary, objects, arrangement)
+            self._validate_export(temporary, arrangement)
             temporary.replace(target)
         except ExportError as error:
             raise self._destination_error(error, target) from error
@@ -434,7 +558,12 @@ class PyMuPDFDocument:
             return error
         return ExportError(f"{error}\n\nEl archivo de destino no se ha modificado.")
 
-    def _build_export(self, temporary: Path, objects: tuple[EditObject, ...]) -> None:
+    def _build_export(
+        self,
+        temporary: Path,
+        objects: tuple[EditObject, ...],
+        arrangement: PageArrangement,
+    ) -> None:
         # PyMuPDF solo puede conservar la protección con la contraseña de
         # propietario. La aplicación no la pide ni la guarda, así que se
         # rechaza el caso de forma explícita en vez de exportar sin cifrar.
@@ -442,21 +571,33 @@ class PyMuPDFDocument:
             raise ExportError(
                 "No se puede exportar un PDF cifrado; guarda antes una copia sin protección"
             )
+        if arrangement.page_count != self._info.page_count:
+            raise ExportError("La disposición de páginas no corresponde al documento abierto")
 
         # Se parte de una copia limpia del original: el documento abierto en el
         # visor nunca se modifica (RN-001).
         document = pymupdf.open(self._info.path)
         try:
+            present = set(arrangement.order)
             pages: dict[int, list[EditObject]] = {}
             for obj in objects:
                 if not 0 <= obj.page_index < document.page_count:
                     raise ExportError(
                         f"El objeto {obj.object_id!r} apunta a una página que no existe"
                     )
+                # Los objetos de páginas eliminadas no se exportan, pero se
+                # conservan en la sesión por si el usuario deshace la eliminación.
+                if obj.page_index not in present:
+                    continue
                 pages.setdefault(obj.page_index, []).append(obj)
 
             for page_index, page_objects in pages.items():
                 page = document.load_page(page_index)
+
+                for replacement in page_objects:
+                    if isinstance(replacement, ImageReplacementObject):
+                        _replace_embedded_image(page, replacement)
+
                 redactions = [obj for obj in page_objects if isinstance(obj, RedactionObject)]
                 if redactions:
                     for redaction in redactions:
@@ -484,6 +625,18 @@ class PyMuPDFDocument:
                             keep_proportion=False,
                         )
 
+            # La rotación adicional se aplica después de insertar el contenido:
+            # así el contenido nuevo gira junto con la página.
+            for source_index in arrangement.order:
+                extra = arrangement.rotation(source_index)
+                if extra:
+                    page = document.load_page(source_index)
+                    page.set_rotation((page.rotation + extra) % 360)
+
+            # Reordenar y eliminar páginas en una sola operación. Los índices
+            # son del documento original, no posiciones de salida.
+            document.select(list(arrangement.order))
+
             # `garbage=4` elimina objetos y recursos que ya no se referencian,
             # imprescindible para que el contenido redactado no quede en el
             # archivo (RNF-008).
@@ -495,14 +648,15 @@ class PyMuPDFDocument:
         finally:
             document.close()
 
-    def _validate_export(self, temporary: Path) -> None:
+    def _validate_export(self, temporary: Path, arrangement: PageArrangement) -> None:
         try:
             document = pymupdf.open(temporary)
         except Exception as error:
             raise ExportError("El archivo exportado no se pudo reabrir") from error
 
         try:
-            if not document.is_pdf or document.page_count != self._info.page_count:
+            expected_pages = arrangement.output_page_count
+            if not document.is_pdf or document.page_count != expected_pages:
                 raise ExportError("El archivo exportado no tiene el número de páginas esperado")
             for page_index in range(document.page_count):
                 page = document.load_page(page_index)
@@ -519,6 +673,26 @@ class PyMuPDFDocument:
                             )
         finally:
             document.close()
+
+    def _image_usage(self) -> dict[int, tuple[int, ...]]:
+        """Páginas en las que aparece cada xref de imagen.
+
+        Se calcula una sola vez por documento: la detección de imágenes solo se
+        usa en el diálogo de reemplazo y el resultado no cambia durante la
+        sesión.
+        """
+        if self._image_usage_cache is not None:
+            return self._image_usage_cache
+
+        usage: dict[int, list[int]] = {}
+        for page_index in range(self._document.page_count):
+            page = self._load_page(page_index)
+            for image in page.get_images(full=True):
+                xref = image[0]
+                if isinstance(xref, int) and xref > 0:
+                    usage.setdefault(xref, []).append(page_index)
+        self._image_usage_cache = {xref: tuple(pages) for xref, pages in usage.items()}
+        return self._image_usage_cache
 
     def _load_page(self, page_index: int) -> pymupdf.Page:
         if self._closed:

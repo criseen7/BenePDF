@@ -13,8 +13,15 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from bene.application.ports.pdf_engine import OpenedDocument
-from bene.domain.editing import EditObject, ImageObject, RedactionObject, TextObject
+from bene.domain.editing import (
+    EditObject,
+    ImageObject,
+    ImageReplacementObject,
+    RedactionObject,
+    TextObject,
+)
 from bene.domain.errors import ExportError
+from bene.domain.pages import PageArrangement
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,10 +33,11 @@ class ExportResult:
     redaction_count: int
     text_count: int
     image_count: int
+    replacement_count: int = 0
 
     @property
     def total_objects(self) -> int:
-        return self.redaction_count + self.text_count + self.image_count
+        return self.redaction_count + self.text_count + self.image_count + self.replacement_count
 
 
 class ExportDocument:
@@ -41,17 +49,24 @@ class ExportDocument:
         destination: str | Path,
         *,
         objects: Iterable[EditObject],
+        arrangement: PageArrangement | None = None,
     ) -> ExportResult:
         target = Path(destination).expanduser().absolute()
         self._validate_destination(document, target)
         items = tuple(objects)
-        document.export_to(target, objects=items)
+        layout = arrangement or PageArrangement.initial(document.info.page_count)
+        # Los objetos de páginas eliminadas no llegan al archivo: el resumen
+        # debe contar solo lo que realmente se exporta.
+        present = set(layout.order)
+        exported = tuple(obj for obj in items if obj.page_index in present)
+        document.export_to(target, objects=items, arrangement=layout)
         return ExportResult(
             destination=target,
-            page_count=document.info.page_count,
-            redaction_count=sum(isinstance(obj, RedactionObject) for obj in items),
-            text_count=sum(isinstance(obj, TextObject) for obj in items),
-            image_count=sum(isinstance(obj, ImageObject) for obj in items),
+            page_count=layout.output_page_count,
+            redaction_count=sum(isinstance(obj, RedactionObject) for obj in exported),
+            text_count=sum(isinstance(obj, TextObject) for obj in exported),
+            image_count=sum(isinstance(obj, ImageObject) for obj in exported),
+            replacement_count=sum(isinstance(obj, ImageReplacementObject) for obj in exported),
         )
 
     @staticmethod

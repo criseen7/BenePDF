@@ -124,6 +124,50 @@ def make_cropped_rotated_pdf(
     return path
 
 
+def make_image_pdf(
+    path: Path,
+    *,
+    pages: int = 1,
+    color: tuple[float, float, float] = (1.0, 0.0, 0.0),
+) -> Path:
+    """PDF con una imagen rectangular incrustada en cada página.
+
+    PyMuPDF reutiliza el mismo xref al insertar la misma imagen en varias
+    páginas, lo que permite probar la detección de imágenes compartidas
+    (RF-013).
+    """
+    source = pymupdf.open()
+    source_page = source.new_page(width=200, height=100)
+    source_page.draw_rect(source_page.rect, color=color, fill=color)
+    stream = source_page.get_pixmap(alpha=False).tobytes("png")
+    source.close()
+
+    document = pymupdf.open()
+    for _ in range(pages):
+        page = document.new_page(width=A4_WIDTH, height=A4_HEIGHT)
+        page.insert_image(pymupdf.Rect(72, 72, 272, 172), stream=stream)
+    document.save(path)
+    document.close()
+    return path
+
+
+def make_cropped_rotated_text_pdf(
+    path: Path,
+    *,
+    cropbox: tuple[float, float, float, float] = (50.0, 80.0, 545.0, 762.0),
+    rotation: int = 90,
+) -> Path:
+    """PDF con texto, CropBox desplazado y /Rotate."""
+    document = pymupdf.open()
+    page = document.new_page(width=A4_WIDTH, height=A4_HEIGHT)
+    page.insert_text((72, 100), "Texto recortado", fontsize=12)
+    page.set_cropbox(pymupdf.Rect(*cropbox))
+    page.set_rotation(rotation)
+    document.save(path)
+    document.close()
+    return path
+
+
 def make_corrupt_file(path: Path) -> Path:
     """Archivo con contenido binario que no es un PDF."""
     path.write_bytes(bytes(range(256)) * 8)

@@ -139,3 +139,22 @@ class RenderError(BeneError):
         super().__init__(f"No se pudo renderizar la página {page_index + 1}: {reason}")
         self.page_index = page_index
         self.reason = reason
+
+
+class SearchError(BeneError):
+    """La búsqueda de texto no se pudo completar."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+
+
+class ImageDetectionError(BeneError):
+    """No se pudieron identificar las imágenes incrustadas de una página."""
+
+    page_index: int
+
+    def __init__(self, page_index: int, reason: str) -> None:
+        super().__init__(
+            f"No se pudieron detectar las imágenes de la página {page_index + 1}: {reason}"
+        )
+        self.page_index = page_index

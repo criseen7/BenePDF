@@ -2,7 +2,7 @@
 
 Aplicación de escritorio para visualizar, organizar y editar documentos PDF sin subir nada a servicios externos.
 
-El proyecto está en fase de construcción. Las iteraciones 1 a 3 cubren la apertura, la visualización, la navegación, el zoom, la rotación de vista, las miniaturas, la edición en memoria de texto e imágenes, la redacción permanente y la exportación segura a un archivo nuevo. La iteración 4 corrige el redimensionado y la exportación en páginas rotadas o recortadas, embebe las fuentes y avisa del texto que no cabe. La iteración 5 añade errores de exportación accionables, accesibilidad por teclado, pruebas con documentos de 100 páginas, empaquetado con PyInstaller e integración continua.
+El proyecto está en fase de construcción. Las iteraciones 1 a 3 cubren la apertura, la visualización, la navegación, el zoom, la rotación de vista, las miniaturas, la edición en memoria de texto e imágenes, la redacción permanente y la exportación segura a un archivo nuevo. La iteración 4 corrige el redimensionado y la exportación en páginas rotadas o recortadas, embebe las fuentes y avisa del texto que no cabe. La iteración 5 añade errores de exportación accionables, accesibilidad por teclado, pruebas con documentos de 100 páginas, empaquetado con PyInstaller e integración continua. La iteración 6 añade búsqueda de texto, información del documento, rotación/reordenación/eliminación/extracción de páginas y reemplazo de imágenes incrustadas.
 
 - Requisitos y criterios de aceptación: [docs/requirements.md](docs/requirements.md)
 - Plan de trabajo y estado: [PLAN.md](PLAN.md)
@@ -52,6 +52,36 @@ Al abrirlo, Bene PDF muestra la primera página ajustada a la ventana. Si el PDF
 
 Los renders se hacen en segundo plano: mientras se prepara una página verás **Renderizando…** y, al terminar, **Listo**. Las páginas ya visitadas se conservan en memoria para que volver atrás sea inmediato.
 
+### Buscar texto
+
+1. Pulsa **Buscar…** (`Ctrl+F`) o usa Editar → Buscar…
+2. Escribe el texto y pulsa `Enter` o **Buscar**. La búsqueda recorre todo el documento en segundo plano.
+3. Las coincidencias aparecen en el panel **Buscar** con su página y un fragmento. Al seleccionar una, el visor salta a su página y la resalta.
+4. Usa **Siguiente** y **Anterior**, o `F3` y `Shift+F3`, para recorrer las coincidencias.
+
+La búsqueda no distingue mayúsculas de minúsculas y no incluye OCR: en documentos escaneados sin texto reconocible no habrá resultados. Si una coincidencia está en una página eliminada de la copia de trabajo, se conserva en la lista pero se avisa de que no se exportará.
+
+### Páginas
+
+Las operaciones de página se aplican a la copia de trabajo y solo cambian el archivo al exportar. El selector de página y la barra de estado usan el orden de salida; si has eliminado páginas, la barra indica también el número de página original.
+
+- **Rotar página 90°** (`Ctrl+Alt+R`): acumula una rotación adicional a la página visible. Es distinta de **Rotar vista**: la rotación de página sí se guarda en el archivo exportado.
+- **Mover página arriba / abajo** (`Ctrl+Alt+↑` / `Ctrl+Alt+↓`): cambia el orden de salida.
+- **Eliminar página…** (`Ctrl+Alt+Supr`): pide confirmación y avisa si la página tiene objetos añadidos, que se omitirán en la exportación. Puedes deshacerlo antes de exportar.
+- **Extraer páginas…** (`Ctrl+Alt+E`): escribe una selección como `1-3, 5` en un archivo nuevo. No altera la sesión, el historial ni el estado «sin exportar».
+
+### Reemplazar una imagen incrustada
+
+1. Abre **Página → Reemplazar imagen…**.
+2. Elige una de las imágenes detectadas en la página visible y pulsa **Elegir imagen de reemplazo…** para seleccionar un PNG o JPEG.
+3. Confirma con **Reemplazar**. La sustitución se aplica solo al exportar.
+
+Si la imagen se comparte entre varias páginas, el diálogo avisa de que cambiará en todas ellas. Las imágenes en línea, las que están dentro de formularios o las que el PDF no identifica con un `xref` fiable no se pueden reemplazar y se omiten en la lista.
+
+### Información del documento
+
+**Archivo → Información del documento…** (`Ctrl+Alt+I`) muestra el nombre y la ruta, el número de páginas, las páginas que se exportarán, el tamaño del archivo, las dimensiones de la página actual, la protección y los metadatos disponibles (título, autor, fechas, etc.). Los datos proceden del propio PDF y pueden faltar o ser incorrectos.
+
 ### Editar el documento
 
 Los cambios se guardan **solo en memoria** durante la sesión: el PDF original nunca se modifica. Cuando termines, expórtalos a un archivo nuevo.
@@ -62,7 +92,7 @@ Los cambios se guardan **solo en memoria** durante la sesión: el PDF original n
 4. **Insertar imagen** (`Ctrl+I`): admite PNG y JPEG de hasta 20 MB. Igual que el texto, usa la región seleccionada o el siguiente clic. La imagen se ajusta a la proporción original.
 5. **Mover y redimensionar**: con la herramienta **Seleccionar** (`Ctrl+Shift+V`), haz clic en un objeto para seleccionarlo. Con el objeto seleccionado, arrastra desde su cuerpo para moverlo o desde las asas de las esquinas para cambiar su tamaño; el cursor cambia al acercarte a cada zona. Las imágenes se estiran libremente; mantén pulsada **Shift** mientras arrastras un asa para conservar su proporción. El panel **Propiedades** permite introducir X, Y, ancho y alto en puntos PDF.
 6. **Eliminar** (`Supr`): borra el objeto seleccionado.
-7. **Deshacer / Rehacer** (`Ctrl+Z` / `Ctrl+Y`): recorre el historial completo de la sesión, incluidas las redacciones.
+7. **Deshacer / Rehacer** (`Ctrl+Z` / `Ctrl+Y`): recorre el historial completo de la sesión, incluidas las redacciones y las operaciones de página.
 
 La barra de estado muestra **Cambios sin exportar** cuando hay ediciones activas. Al cerrar el documento, abrir otro PDF o salir, la aplicación ofrece **Guardar**, **Descartar** o **Cancelar**.
 
@@ -71,9 +101,12 @@ La barra de estado muestra **Cambios sin exportar** cuando hay ediciones activas
 1. Pulsa **Exportar como…** (`Ctrl+Shift+S`) o usa Archivo → Exportar como…
 2. Elige un nombre y una carpeta distintos del PDF original. La aplicación rechaza guardar sobre el original y propone `nombre-editado.pdf`, `nombre-editado-2.pdf`, … para no pisar una exportación anterior.
 3. Si hay redacciones, confirma que se aplicarán de forma permanente.
-4. Bene PDF escribe primero en un archivo temporal, lo reabre para validarlo y solo entonces reemplaza el destino. Si algo falla, el archivo original y el destino anterior quedan intactos; el aviso de error lo indica de forma explícita.
+4. Bene PDF aplica las redacciones, inserta el texto e imágenes nuevos, añade la rotación de página y, por último, reordena y elimina las páginas según la copia de trabajo.
+5. Bene PDF escribe primero en un archivo temporal, lo reabre para validarlo y solo entonces reemplaza el destino. Si algo falla, el archivo original y el destino anterior quedan intactos; el aviso de error lo indica de forma explícita.
 
-El archivo exportado puede abrirse de nuevo y contiene el texto, las imágenes y las redacciones aplicadas. La redacción elimina el texto subyacente (no solo lo tapa) y, en páginas escaneadas, borra únicamente los píxeles de la región marcada.
+El archivo exportado puede abrirse de nuevo y contiene el texto, las imágenes, las redacciones, los reemplazos de imagen y la disposición de páginas aplicadas. La redacción elimina el texto subyacente (no solo lo tapa) y, en páginas escaneadas, borra únicamente los píxeles de la región marcada.
+
+Para guardar solo algunas páginas, usa **Página → Extraer páginas…**; la extracción crea un archivo nuevo y no cambia la sesión de trabajo.
 
 Los PDF cifrados no se pueden exportar en esta iteración: PyMuPDF necesitaría la contraseña de propietario para conservar la protección y la aplicación no la solicita ni la guarda. La acción **Exportar como…** aparece deshabilitada para esos documentos.
 
@@ -115,6 +148,15 @@ Pulsa **Rotar vista 90°** o `Ctrl+R` para girar la página en pantalla 90° en 
 | Redactar región | `Ctrl+Shift+X` |
 | Añadir texto | `Ctrl+T` |
 | Insertar imagen | `Ctrl+I` |
+| Buscar | `Ctrl+F` |
+| Buscar siguiente | `F3` |
+| Buscar anterior | `Shift+F3` |
+| Información del documento | `Ctrl+Alt+I` |
+| Rotar página 90° | `Ctrl+Alt+R` |
+| Mover página arriba | `Ctrl+Alt+↑` |
+| Mover página abajo | `Ctrl+Alt+↓` |
+| Eliminar página | `Ctrl+Alt+Supr` |
+| Extraer páginas | `Ctrl+Alt+E` |
 | Exportar como… | `Ctrl+Shift+S` |
 | Deshacer | `Ctrl+Z` |
 | Rehacer | `Ctrl+Y` |
@@ -177,9 +219,10 @@ También se puede generar un único archivo con `--onefile`, aunque tarda más e
 
 - Los cambios de edición viven en memoria hasta que se exportan; el PDF original nunca se modifica.
 - Los PDF cifrados no se pueden exportar mientras conserven la protección.
-- No hay búsqueda, OCR ni impresión; llegan en iteraciones posteriores.
-- Las miniaturas y los renders se generan a partir del PDF original, así que las ediciones no aparecen en ellas.
-- La rotación de vista no se guarda en el archivo.
+- No hay OCR ni impresión; la búsqueda solo encuentra texto reconocible, no escaneos.
+- Las miniaturas reflejan el orden y la rotación adicional de las páginas, pero se generan a partir del PDF original: el texto, las imágenes y las redacciones añadidas no aparecen en ellas.
+- La rotación de vista no se guarda en el archivo; la rotación de página sí se aplica al exportar.
+- El reemplazo de imagen no está disponible para imágenes en línea, dentro de formularios o sin un `xref` fiable.
 - La redacción puede afectar a objetos que se solapen con la región marcada; revísala antes de exportar.
 - Si una página concreta no se puede renderizar, se muestra un aviso y el detalle queda en el registro.
 - La interfaz se ha verificado en modo offscreen sobre Windows (y en CI sobre Ubuntu); falta una revisión visual con pantalla real, DPI y lector de pantalla antes de una versión distribuible.

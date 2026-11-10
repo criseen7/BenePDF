@@ -34,15 +34,25 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from bene.application.ports.pdf_engine import OpenedDocument, RenderedPage
+from bene.application.ports.pdf_engine import OpenedDocument, RenderedPage, SearchMatch
 from bene.application.use_cases.edit_session import EditSession
 from bene.application.use_cases.export_document import ExportDocument, ExportResult
 from bene.application.use_cases.open_document import OpenDocument
 from bene.application.use_cases.render_page import MAX_RENDER_PIXELS
 from bene.config import APP_NAME
-from bene.domain.editing import EditObject, ImageObject, RedactionObject, TextObject, TextStyle
+from bene.domain.editing import (
+    EditObject,
+    ImageObject,
+    ImageReplacementObject,
+    RedactionObject,
+    TextObject,
+    TextStyle,
+)
 from bene.domain.errors import BeneError, EncryptedDocumentError
 from bene.domain.models import DocumentInfo, PageInfo, PageKind, PdfRect
+from bene.domain.pages import PageArrangement, parse_page_selection
+from bene.presentation.dialogs.document_info_dialog import DocumentInfoDialog
+from bene.presentation.dialogs.image_replacement_dialog import ImageReplacementDialog
 from bene.presentation.dialogs.text_dialog import TextDialog
 from bene.presentation.fit import FitMode, clamp_scale, fit_scale, next_zoom, rotated_size
 from bene.presentation.images import ImageLoadError, LoadedImage, load_image
@@ -50,8 +60,10 @@ from bene.presentation.render_cache import RenderCache
 from bene.presentation.viewer.coordinates import CoordinateMapper
 from bene.presentation.viewer.pdf_canvas import CanvasTool, PdfCanvas, rendered_page_to_image
 from bene.presentation.widgets.properties_panel import ObjectPropertiesPanel
+from bene.presentation.widgets.search_panel import SearchPanel
 from bene.presentation.widgets.thumbnail_panel import ThumbnailPanel
 from bene.presentation.workers.render_worker import PageRenderer, RenderScheduler
+from bene.presentation.workers.search_worker import SearchWorker
 from bene.presentation.workers.thumbnail_worker import ThumbnailLoader, ThumbnailRequest
 
 logger = logging.getLogger(__name__)
@@ -96,6 +108,11 @@ class MainWindow(QMainWindow):
         self._thumbnail_loader = ThumbnailLoader(self)
         self._thumbnail_loader.ready.connect(self._on_thumbnail_ready)
         self._thumbnail_loader.failed.connect(self._on_thumbnail_failed)
+        self._search_worker = SearchWorker(self)
+        self._search_worker.ready.connect(self._on_search_ready)
+        self._search_worker.failed.connect(self._on_search_failed)
+        self._search_matches: tuple[SearchMatch, ...] = ()
+        self._current_search_match: SearchMatch | None = None
 
         self._page_index = 0
         self._zoom = 1.0
@@ -167,6 +184,25 @@ class MainWindow(QMainWindow):
     def properties_panel(self) -> ObjectPropertiesPanel:
         return self._properties
 
+    @property
+    def search_panel(self) -> SearchPanel:
+        return self._search
+
+    @property
+    def search_matches(self) -> tuple[SearchMatch, ...]:
+        return self._search_matches
+
+    @property
+    def current_search_match(self) -> SearchMatch | None:
+        return self._current_search_match
+
+    @property
+    def output_page_count(self) -> int:
+        session = self._edit_session
+        if session is not None:
+            return session.output_page_count
+        return self._document_info.page_count if self._document_info is not None else 0
+
     def open_path(self, path: str | Path) -> bool:
         """Abre un documento. Devuelve ``False`` y muestra el error si falla."""
         candidate = Path(path).expanduser()
@@ -211,7 +247,8 @@ class MainWindow(QMainWindow):
     def go_to_page(self, page_index: int) -> None:
         if self._document_info is None:
             return
-        target = max(0, min(page_index, self._document_info.page_count - 1))
+        page_count = self.output_page_count
+        target = max(0, min(page_index, page_count - 1))
         if target == self._page_index:
             return
         self._page_index = target
@@ -307,6 +344,19 @@ class MainWindow(QMainWindow):
         )
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, properties_dock)
 
+        self._search = SearchPanel(self)
+        self._search.search_requested.connect(self.search_text)
+        self._search.match_selected.connect(self._on_search_match_selected)
+        search_dock = QDockWidget("Buscar", self)
+        search_dock.setObjectName("dock_busqueda")
+        search_dock.setWidget(self._search)
+        search_dock.setAllowedAreas(
+            Qt.DockWidgetArea.LeftDockWidgetArea | Qt.DockWidgetArea.RightDockWidgetArea
+        )
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, search_dock)
+        search_dock.hide()
+        self._search_dock = search_dock
+
         self._open_action = QAction("Abrir…", self)
         self._open_action.setShortcut(QKeySequence.StandardKey.Open)
         self._open_action.setStatusTip("Abrir un documento PDF")
@@ -401,6 +451,54 @@ class MainWindow(QMainWindow):
         self._delete_action.setShortcut(QKeySequence(Qt.Key.Key_Delete))
         self._delete_action.triggered.connect(self.delete_selected_object)
 
+        self._search_action = QAction("Buscar…", self)
+        self._search_action.setObjectName("accion_buscar")
+        self._search_action.setShortcut(QKeySequence.StandardKey.Find)
+        self._search_action.setStatusTip("Buscar texto en todo el documento")
+        self._search_action.triggered.connect(self._show_search)
+
+        self._find_next_action = QAction("Buscar siguiente", self)
+        self._find_next_action.setShortcut(QKeySequence.StandardKey.FindNext)
+        self._find_next_action.triggered.connect(self.find_next)
+
+        self._find_previous_action = QAction("Buscar anterior", self)
+        self._find_previous_action.setShortcut(QKeySequence("Shift+F3"))
+        self._find_previous_action.triggered.connect(self.find_previous)
+
+        self._document_info_action = QAction("Información del documento…", self)
+        self._document_info_action.setObjectName("accion_informacion_documento")
+        self._document_info_action.setShortcut(QKeySequence("Ctrl+Alt+I"))
+        self._document_info_action.triggered.connect(self.show_document_info)
+
+        self._rotate_page_action = QAction("Rotar página 90°", self)
+        self._rotate_page_action.setObjectName("accion_rotar_pagina")
+        self._rotate_page_action.setShortcut(QKeySequence("Ctrl+Alt+R"))
+        self._rotate_page_action.triggered.connect(lambda: self.rotate_current_page(90))
+
+        self._move_page_up_action = QAction("Mover página arriba", self)
+        self._move_page_up_action.setObjectName("accion_mover_pagina_arriba")
+        self._move_page_up_action.setShortcut(QKeySequence("Ctrl+Alt+Up"))
+        self._move_page_up_action.triggered.connect(lambda: self.move_current_page(-1))
+
+        self._move_page_down_action = QAction("Mover página abajo", self)
+        self._move_page_down_action.setObjectName("accion_mover_pagina_abajo")
+        self._move_page_down_action.setShortcut(QKeySequence("Ctrl+Alt+Down"))
+        self._move_page_down_action.triggered.connect(lambda: self.move_current_page(1))
+
+        self._delete_page_action = QAction("Eliminar página…", self)
+        self._delete_page_action.setObjectName("accion_eliminar_pagina")
+        self._delete_page_action.setShortcut(QKeySequence("Ctrl+Alt+Delete"))
+        self._delete_page_action.triggered.connect(self.delete_current_page)
+
+        self._extract_pages_action = QAction("Extraer páginas…", self)
+        self._extract_pages_action.setObjectName("accion_extraer_paginas")
+        self._extract_pages_action.setShortcut(QKeySequence("Ctrl+Alt+E"))
+        self._extract_pages_action.triggered.connect(self.extract_pages_dialog)
+
+        self._replace_image_action = QAction("Reemplazar imagen…", self)
+        self._replace_image_action.setObjectName("accion_reemplazar_imagen")
+        self._replace_image_action.triggered.connect(self.replace_image_dialog)
+
         self._quit_action = QAction("Salir", self)
         self._quit_action.setShortcut(QKeySequence.StandardKey.Quit)
         self._quit_action.triggered.connect(self.close)
@@ -424,6 +522,16 @@ class MainWindow(QMainWindow):
             self._undo_action,
             self._redo_action,
             self._delete_action,
+            self._search_action,
+            self._find_next_action,
+            self._find_previous_action,
+            self._document_info_action,
+            self._rotate_page_action,
+            self._move_page_up_action,
+            self._move_page_down_action,
+            self._delete_page_action,
+            self._extract_pages_action,
+            self._replace_image_action,
         )
 
         self._page_spin = QSpinBox(self)
@@ -458,6 +566,7 @@ class MainWindow(QMainWindow):
         toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
         toolbar.addAction(self._open_action)
         toolbar.addAction(self._export_action)
+        toolbar.addAction(self._search_action)
         toolbar.addSeparator()
         toolbar.addWidget(self._previous_button)
         toolbar.addWidget(self._page_spin)
@@ -486,6 +595,10 @@ class MainWindow(QMainWindow):
         file_menu = self.menuBar().addMenu("&Archivo")
         file_menu.addAction(self._open_action)
         file_menu.addAction(self._export_action)
+        file_menu.addAction(self._extract_pages_action)
+        file_menu.addSeparator()
+        file_menu.addAction(self._document_info_action)
+        file_menu.addSeparator()
         file_menu.addAction(self._close_action)
         file_menu.addSeparator()
         file_menu.addAction(self._quit_action)
@@ -494,6 +607,10 @@ class MainWindow(QMainWindow):
         edit_menu.addAction(self._undo_action)
         edit_menu.addAction(self._redo_action)
         edit_menu.addSeparator()
+        edit_menu.addAction(self._search_action)
+        edit_menu.addAction(self._find_next_action)
+        edit_menu.addAction(self._find_previous_action)
+        edit_menu.addSeparator()
         edit_menu.addAction(self._select_tool_action)
         edit_menu.addAction(self._region_tool_action)
         edit_menu.addAction(self._redact_tool_action)
@@ -501,6 +618,17 @@ class MainWindow(QMainWindow):
         edit_menu.addAction(self._add_text_action)
         edit_menu.addAction(self._add_image_action)
         edit_menu.addAction(self._delete_action)
+
+        page_menu = self.menuBar().addMenu("&Página")
+        page_menu.addAction(self._rotate_page_action)
+        page_menu.addAction(self._move_page_up_action)
+        page_menu.addAction(self._move_page_down_action)
+        page_menu.addSeparator()
+        page_menu.addAction(self._delete_page_action)
+        page_menu.addAction(self._extract_pages_action)
+        page_menu.addSeparator()
+        page_menu.addAction(self._replace_image_action)
+        page_menu.addAction(self._document_info_action)
 
         view_menu = self.menuBar().addMenu("&Ver")
         view_menu.addAction(self._zoom_in_action)
@@ -577,10 +705,10 @@ class MainWindow(QMainWindow):
         self._status_document.setText(info.title)
 
         self._page_spin.blockSignals(True)
-        self._page_spin.setRange(1, info.page_count)
+        self._page_spin.setRange(1, max(1, self.output_page_count))
         self._page_spin.setValue(self._page_index + 1)
         self._page_spin.blockSignals(False)
-        self._page_total.setText(f"/ {info.page_count}")
+        self._page_total.setText(f"/ {self.output_page_count}")
         self._thumbnails.set_current_page(self._page_index)
 
         self._update_page_status()
@@ -591,20 +719,27 @@ class MainWindow(QMainWindow):
         info = self._document_info
         if info is None:
             return
+        source_index = self._source_page_index()
         try:
-            page_info = self._page_info(self._page_index)
+            page_info = self._page_info(source_index)
         except BeneError as error:
-            logger.warning("No se pudo leer la página %d: %s", self._page_index + 1, error)
+            logger.warning("No se pudo leer la página %d: %s", source_index + 1, error)
             self._status_page.setText("")
             return
 
         kind = PAGE_KIND_LABELS.get(page_info.kind, "tipo desconocido")
-        width, height = page_info.rotated_size
-        self._status_page.setText(
-            f"Página {self._page_index + 1} de {info.page_count} · "
+        width, height = rotated_size(
+            *page_info.rotated_size,
+            self._arrangement().rotation(source_index),
+        )
+        text = (
+            f"Página {self._page_index + 1} de {self.output_page_count} · "
             f"{kind} · {width:.0f} × {height:.0f} pt"
         )
-        self._canvas.setAccessibleDescription(self._status_page.text())
+        if self.output_page_count != info.page_count:
+            text += f" · original: página {source_index + 1}"
+        self._status_page.setText(text)
+        self._canvas.setAccessibleDescription(text)
 
     # ------------------------------------------------------------- documento
 
@@ -620,13 +755,14 @@ class MainWindow(QMainWindow):
         self._zoom = 1.0
         self._fit_mode = FitMode.PAGE
         self._last_directory = path.parent
-        self._edit_session = EditSession()
+        self._edit_session = EditSession(page_count=document.info.page_count)
         self._selected_object_id = None
         self._pending_text = None
         self._pending_image = None
         self._canvas.clear_region()
         self._canvas.set_tool(CanvasTool.SELECT)
         self._select_tool_action.setChecked(True)
+        self._clear_search()
 
         self._scheduler = RenderScheduler(self._renderer_factory(document), self)
         self._scheduler.rendered.connect(self._on_rendered)
@@ -641,21 +777,46 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(0, self._request_render)
 
     def _start_thumbnails(self, document: OpenedDocument) -> None:
+        self._rebuild_thumbnails()
+
+    def _rebuild_thumbnails(self) -> None:
+        document = self._document
+        session = self._edit_session
+        if document is None or session is None:
+            self._thumbnails.set_page_count(0)
+            return
+        arrangement = session.page_arrangement
+        count = arrangement.output_page_count
+        self._thumbnails.set_page_count(count)
         requests = [
-            ThumbnailRequest(index, THUMBNAIL_SCALE) for index in range(document.info.page_count)
+            ThumbnailRequest(
+                arrangement.source_index(position),
+                THUMBNAIL_SCALE,
+                arrangement.rotation(arrangement.source_index(position)),
+            )
+            for position in range(count)
         ]
         self._thumbnail_loader.start(self._renderer_factory(document), requests)
 
     def _on_thumbnail_ready(self, page_index: int, render: object) -> None:
         if not isinstance(render, RenderedPage):
             return
-        self._thumbnails.set_thumbnail(page_index, rendered_page_to_image(render))
+        session = self._edit_session
+        position = page_index
+        if session is not None:
+            mapped = session.page_arrangement.output_index(page_index)
+            if mapped is None:
+                return
+            position = mapped
+        self._thumbnails.set_thumbnail(position, rendered_page_to_image(render))
 
     def _on_thumbnail_failed(self, page_index: int, error: object) -> None:
         logger.warning("Miniatura no disponible para la página %d: %s", page_index + 1, error)
 
     def _teardown_document(self) -> None:
         self._thumbnail_loader.shutdown()
+        self._search_worker.shutdown()
+        self._clear_search()
         if self._scheduler is not None:
             self._scheduler.shutdown()
             self._scheduler.deleteLater()
@@ -694,6 +855,28 @@ class MainWindow(QMainWindow):
         self._page_infos[page_index] = info
         return info
 
+    # -------------------------------------------------------------- páginas
+
+    def _arrangement(self) -> PageArrangement:
+        session = self._edit_session
+        if session is not None:
+            return session.page_arrangement
+        if self._document_info is not None:
+            return PageArrangement.initial(self._document_info.page_count)
+        return PageArrangement.initial(0)
+
+    def _source_page_index(self) -> int:
+        """Índice de la página original que se está mostrando."""
+        arrangement = self._arrangement()
+        if arrangement.output_page_count == 0:
+            return 0
+        position = max(0, min(self._page_index, arrangement.output_page_count - 1))
+        return arrangement.source_index(position)
+
+    def _render_rotation(self, source_index: int) -> int:
+        extra = self._arrangement().rotation(source_index)
+        return (self._view_rotation + extra) % 360
+
     # ---------------------------------------------------------------- render
 
     def _effective_scale(self) -> float:
@@ -703,12 +886,14 @@ class MainWindow(QMainWindow):
             return self._zoom
 
         try:
-            page_info = self._page_info(self._page_index)
+            page_info = self._page_info(self._source_page_index())
         except BeneError:
             return self._zoom
 
         width, height = page_info.rotated_size
-        width, height = rotated_size(width, height, self._view_rotation)
+        width, height = rotated_size(
+            width, height, self._render_rotation(self._source_page_index())
+        )
         viewport = self._scroll.viewport().size()
         available_width = viewport.width()
         # Al ajustar al ancho aparecerá la barra vertical: se descuenta su
@@ -726,7 +911,9 @@ class MainWindow(QMainWindow):
         scale = logical_scale * pixel_ratio
         self._status_zoom.setText(f"{logical_scale * 100:.0f} %")
 
-        key = (self._page_index, round(scale, 4), self._view_rotation)
+        source_index = self._source_page_index()
+        rotation = self._render_rotation(source_index)
+        key = (source_index, round(scale, 4), rotation)
         cached = self._cache.get(key)
         if cached is not None:
             self._show_render(cached)
@@ -735,7 +922,7 @@ class MainWindow(QMainWindow):
         self._status_activity.setText("Renderizando…")
         if not self._canvas.has_image:
             self._canvas.set_message("Renderizando página…")
-        self._scheduler.request(self._page_index, scale, self._view_rotation)
+        self._scheduler.request(source_index, scale, rotation)
 
     def _pixel_ratio(self) -> float:
         """Densidad de la pantalla, para renderizar con nitidez en HiDPI."""
@@ -754,10 +941,12 @@ class MainWindow(QMainWindow):
         if self._document is None or logical_scale <= 0:
             return ratio
         try:
-            width, height = self._page_info(self._page_index).rotated_size
+            width, height = self._page_info(self._source_page_index()).rotated_size
         except BeneError:
             return ratio
-        width, height = rotated_size(width, height, self._view_rotation)
+        width, height = rotated_size(
+            width, height, self._render_rotation(self._source_page_index())
+        )
         area = width * height
         if area <= 0:
             return ratio
@@ -775,7 +964,9 @@ class MainWindow(QMainWindow):
         key = (render.page_index, round(render.scale, 4), render.rotation)
         self._cache.put(key, render)
 
-        if render.page_index != self._page_index or render.rotation != self._view_rotation:
+        source_index = self._source_page_index()
+        expected_rotation = self._render_rotation(source_index)
+        if render.page_index != source_index or render.rotation != expected_rotation:
             return
         logical_scale = self._effective_scale()
         expected_scale = logical_scale * self._render_pixel_ratio(logical_scale)
@@ -815,6 +1006,7 @@ class MainWindow(QMainWindow):
                 )
             )
         self._refresh_edit_ui()
+        self._refresh_search_highlights()
         self._status_activity.setText("Listo")
         self._update_page_status()
 
@@ -840,7 +1032,7 @@ class MainWindow(QMainWindow):
         session = self._edit_session
         if session is None or not text.strip():
             return None
-        obj = session.add_text(self._page_index, rect, text, style)
+        obj = session.add_text(self._source_page_index(), rect, text, style)
         self._selected_object_id = obj.object_id
         self._refresh_edit_ui()
         return obj
@@ -857,7 +1049,7 @@ class MainWindow(QMainWindow):
         if session is None:
             return None
         obj = session.add_image(
-            self._page_index,
+            self._source_page_index(),
             rect,
             data,
             mime_type,
@@ -871,7 +1063,7 @@ class MainWindow(QMainWindow):
         session = self._edit_session
         if session is None or rect.is_empty:
             return None
-        obj = session.add_redaction(self._page_index, rect)
+        obj = session.add_redaction(self._source_page_index(), rect)
         self._selected_object_id = obj.object_id
         self._refresh_edit_ui()
         return obj
@@ -920,6 +1112,306 @@ class MainWindow(QMainWindow):
         self._refresh_edit_ui()
         return True
 
+    # ------------------------------------------------------ páginas y búsqueda
+
+    def rotate_current_page(self, degrees: int = 90) -> bool:
+        """Acumula una rotación adicional a la página visible."""
+        session = self._edit_session
+        if session is None or session.output_page_count == 0:
+            return False
+        source_index = self._source_page_index()
+        session.rotate_page(source_index, degrees)
+        self._rebuild_thumbnails()
+        self._update_ui()
+        self._request_render()
+        self._status_activity.setText(f"Página rotada {degrees}°; se aplicará al exportar")
+        return True
+
+    def move_current_page(self, delta: int) -> bool:
+        """Mueve la página visible ``delta`` posiciones en la copia de trabajo."""
+        session = self._edit_session
+        if session is None:
+            return False
+        target = self._page_index + delta
+        if not 0 <= target < session.output_page_count:
+            return False
+        session.move_page(self._page_index, target)
+        self._page_index = target
+        self._selected_object_id = None
+        self._rebuild_thumbnails()
+        self._update_ui()
+        self._request_render()
+        self._status_activity.setText("Orden de páginas cambiado; se aplicará al exportar")
+        return True
+
+    def delete_current_page(self) -> bool:
+        """Elimina la página visible tras confirmarlo (RF-023)."""
+        session = self._edit_session
+        info = self._document_info
+        if session is None or info is None or session.output_page_count <= 1:
+            return False
+
+        source_index = self._source_page_index()
+        objects = len(session.objects_on_page(source_index))
+        detail = (
+            f"\n\nTambién se omitirán {objects} objeto(s) añadido(s) en esa página."
+            if objects
+            else ""
+        )
+        result = QMessageBox.warning(
+            self,
+            APP_NAME,
+            f"Se eliminará la página {self._page_index + 1} de "
+            f"{session.output_page_count} de la copia exportada.{detail}\n\n"
+            "El PDF original no cambia y podrás deshacer la eliminación antes de "
+            "exportar.\n\n¿Eliminar la página?",
+            QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+            QMessageBox.StandardButton.Cancel,
+        )
+        if result != QMessageBox.StandardButton.Ok:
+            return False
+
+        session.delete_page(source_index)
+        self._selected_object_id = None
+        self._page_index = min(self._page_index, session.output_page_count - 1)
+        self._cache.clear()
+        self._rebuild_thumbnails()
+        self._update_ui()
+        self._request_render()
+        self._status_activity.setText("Página eliminada; se aplicará al exportar")
+        return True
+
+    def extract_pages(self, selection: str, destination: str | Path) -> ExportResult | None:
+        """Exporta una selección de páginas visibles sin tocar la sesión."""
+        session = self._edit_session
+        document = self._document
+        info = self._document_info
+        if session is None or document is None or info is None:
+            return None
+        if info.encrypted:
+            QMessageBox.warning(
+                self,
+                APP_NAME,
+                "No se puede extraer de un PDF cifrado.\n\n"
+                "Guarda antes una copia sin protección y vuelve a abrirla.",
+            )
+            return None
+
+        positions = parse_page_selection(selection, session.output_page_count)
+        sources = tuple(session.page_arrangement.source_index(position) for position in positions)
+        arrangement = session.page_arrangement.subset(sources)
+        result = self._export_copy(destination, arrangement)
+        if result is not None:
+            self._status_activity.setText(
+                f"Páginas extraídas: {result.destination.name} ({result.page_count} páginas)"
+            )
+            logger.info(
+                "Páginas extraídas a %s (%d páginas)",
+                result.destination,
+                result.page_count,
+            )
+        return result
+
+    def extract_pages_dialog(self) -> None:
+        session = self._edit_session
+        info = self._document_info
+        if session is None or info is None:
+            return
+
+        text, accepted = QInputDialog.getText(
+            self,
+            "Extraer páginas",
+            f"Páginas a extraer (1-{session.output_page_count}; por ejemplo 1-3, 5):",
+        )
+        if not accepted or not text.strip():
+            return
+        try:
+            parse_page_selection(text, session.output_page_count)
+        except BeneError as error:
+            QMessageBox.warning(self, APP_NAME, str(error))
+            return
+
+        filename, _ = QFileDialog.getSaveFileName(
+            self,
+            "Extraer páginas",
+            str(self._default_extract_path(info)),
+            "Documentos PDF (*.pdf)",
+        )
+        if not filename:
+            return
+        destination = Path(filename)
+        if destination.suffix.lower() != ".pdf":
+            destination = destination.with_suffix(".pdf")
+        result = self.extract_pages(text, destination)
+        if result is not None:
+            QMessageBox.information(
+                self,
+                APP_NAME,
+                f"Se han extraído {result.page_count} páginas en:\n{result.destination}",
+            )
+
+    def show_document_info(self) -> None:
+        info = self._document_info
+        if info is None:
+            return
+        dialog = DocumentInfoDialog(
+            info,
+            page_size=self._page_size(),
+            output_page_count=self.output_page_count,
+            parent=self,
+        )
+        dialog.exec()
+
+    def replace_image_object(
+        self,
+        image_id: str,
+        rect: PdfRect,
+        data: bytes,
+        mime_type: str,
+        *,
+        source_path: Path | None = None,
+    ) -> ImageReplacementObject | None:
+        session = self._edit_session
+        if session is None:
+            return None
+        obj = session.replace_image(
+            self._source_page_index(),
+            image_id,
+            rect,
+            data,
+            mime_type,
+            source_path=source_path,
+        )
+        self._selected_object_id = obj.object_id
+        self._refresh_edit_ui()
+        return obj
+
+    def replace_image_dialog(self) -> None:
+        document = self._document
+        session = self._edit_session
+        if document is None or session is None:
+            return
+
+        source_index = self._source_page_index()
+        try:
+            images = document.images_on_page(source_index)
+        except BeneError as error:
+            self._show_error(error)
+            return
+        if not images:
+            QMessageBox.information(
+                self,
+                APP_NAME,
+                "No se han detectado imágenes reemplazables en esta página.\n\n"
+                "Las imágenes en línea, las que están dentro de formularios o las "
+                "que el PDF no identifica de forma fiable no se pueden sustituir.",
+            )
+            return
+
+        dialog = ImageReplacementDialog(
+            images,
+            self,
+            last_directory=self._last_directory,
+        )
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        image = dialog.selected_image
+        loaded = dialog.replacement
+        if image is None or loaded is None:
+            return
+
+        self.replace_image_object(
+            image.image_id,
+            image.rect,
+            loaded.data,
+            loaded.mime_type,
+            source_path=loaded.source_path,
+        )
+        self._last_directory = loaded.source_path.parent
+        self._status_activity.setText("Imagen marcada para reemplazar; se aplicará al exportar")
+
+    def _show_search(self) -> None:
+        if self._document is None:
+            return
+        self._search_dock.show()
+        self._search_dock.raise_()
+        self._search.focus_query()
+
+    def search_text(self, query: str) -> None:
+        """Busca ``query`` en todo el documento y muestra los resultados."""
+        document = self._document
+        text = query.strip()
+        if document is None or not text:
+            return
+        self._search_dock.show()
+        self._search.set_searching(text)
+        self._search_worker.search(document, text)
+
+    def find_next(self) -> None:
+        if not self._search_matches:
+            self._show_search()
+            return
+        self._search.next_match()
+
+    def find_previous(self) -> None:
+        if not self._search_matches:
+            self._show_search()
+            return
+        self._search.previous_match()
+
+    def _on_search_ready(self, query: str, matches: object) -> None:
+        if isinstance(matches, Iterable):
+            result = tuple(match for match in matches if isinstance(match, SearchMatch))
+        else:
+            result = ()
+        self._search_matches = result
+        self._current_search_match = None
+        self._search.set_results(query, result)
+        self._refresh_search_highlights()
+
+    def _on_search_failed(self, query: str, error: object) -> None:
+        self._search_matches = ()
+        self._current_search_match = None
+        self._search.set_error(query, str(error))
+        self._canvas.clear_search_highlights()
+
+    def _on_search_match_selected(self, match: object) -> None:
+        if not isinstance(match, SearchMatch):
+            return
+        position = self._arrangement().output_index(match.page_index)
+        if position is None:
+            self._status_activity.setText(
+                "La coincidencia está en una página eliminada de la copia de trabajo"
+            )
+            return
+        self._current_search_match = match
+        if position != self._page_index:
+            self._page_index = position
+            self._selected_object_id = None
+            self._update_ui()
+            self._request_render()
+        else:
+            self._refresh_search_highlights()
+
+    def _refresh_search_highlights(self) -> None:
+        if self._document_info is None:
+            self._canvas.clear_search_highlights()
+            return
+        source_index = self._source_page_index()
+        rects = tuple(
+            match.rect for match in self._search_matches if match.page_index == source_index
+        )
+        current = self._current_search_match
+        if current is not None and current.page_index != source_index:
+            current = None
+        self._canvas.set_search_highlights(rects, current.rect if current else None)
+
+    def _clear_search(self) -> None:
+        self._search_matches = ()
+        self._current_search_match = None
+        self._search.clear()
+        self._canvas.clear_search_highlights()
+
     def _refresh_edit_ui(self) -> None:
         session = self._edit_session
         if session is None:
@@ -930,22 +1422,22 @@ class MainWindow(QMainWindow):
             self._redo_action.setEnabled(False)
             self._delete_action.setEnabled(False)
             self._status_edit.setText("Sin cambios")
+            self._update_page_actions(None)
             return
 
-        if (
-            self._selected_object_id is not None
-            and session.object(self._selected_object_id) is None
-        ):
-            self._selected_object_id = None
-
-        page_objects = session.objects_on_page(self._page_index)
-        self._canvas.set_objects(page_objects)
-        self._canvas.set_overflow_ids(self._overflow_ids(page_objects))
+        source_index = self._source_page_index()
         selected = (
             session.object(self._selected_object_id)
             if self._selected_object_id is not None
             else None
         )
+        if selected is not None and selected.page_index != source_index:
+            self._selected_object_id = None
+            selected = None
+
+        page_objects = session.objects_on_page(source_index)
+        self._canvas.set_objects(page_objects)
+        self._canvas.set_overflow_ids(self._overflow_ids(page_objects))
         self._properties.set_object(selected)
         self._undo_action.setEnabled(session.can_undo)
         self._redo_action.setEnabled(session.can_redo)
@@ -953,6 +1445,28 @@ class MainWindow(QMainWindow):
         self._status_edit.setText("Cambios sin exportar" if session.is_dirty else "Sin cambios")
         if self._canvas.selected_object_id != self._selected_object_id:
             self._canvas.select_object(self._selected_object_id)
+        self._update_page_actions(session)
+
+    def _update_page_actions(self, session: EditSession | None) -> None:
+        if session is None:
+            for action in (
+                self._rotate_page_action,
+                self._move_page_up_action,
+                self._move_page_down_action,
+                self._delete_page_action,
+                self._extract_pages_action,
+                self._replace_image_action,
+            ):
+                action.setEnabled(False)
+            return
+
+        count = session.output_page_count
+        self._rotate_page_action.setEnabled(count > 0)
+        self._move_page_up_action.setEnabled(count > 1 and self._page_index > 0)
+        self._move_page_down_action.setEnabled(count > 1 and self._page_index < count - 1)
+        self._delete_page_action.setEnabled(count > 1)
+        self._extract_pages_action.setEnabled(count > 0)
+        self._replace_image_action.setEnabled(count > 0)
 
     def _overflow_ids(self, objects: Iterable[EditObject]) -> set[str]:
         """Textos de la página que no caben según la medición del motor."""
@@ -1143,7 +1657,7 @@ class MainWindow(QMainWindow):
 
     def _page_size(self) -> tuple[float, float]:
         try:
-            return self._page_info(self._page_index).rotated_size
+            return self._page_info(self._source_page_index()).rotated_size
         except BeneError:
             return (1.0, 1.0)
 
@@ -1198,6 +1712,7 @@ class MainWindow(QMainWindow):
                 document,
                 destination,
                 objects=session.objects,
+                arrangement=session.page_arrangement,
             )
         except BeneError as error:
             logger.warning("No se pudo exportar a %s: %s", destination, error)
@@ -1218,13 +1733,50 @@ class MainWindow(QMainWindow):
         self._refresh_edit_ui()
         self._status_activity.setText(f"Exportado: {result.destination.name}")
         logger.info(
-            "Documento exportado a %s (%d redacciones, %d textos, %d imágenes)",
+            "Documento exportado a %s (%d redacciones, %d textos, %d imágenes, "
+            "%d reemplazos de imagen)",
             result.destination,
             result.redaction_count,
             result.text_count,
             result.image_count,
+            result.replacement_count,
         )
         return result
+
+    def _export_copy(
+        self,
+        destination: str | Path,
+        arrangement: PageArrangement,
+    ) -> ExportResult | None:
+        """Exporta una copia con una disposición concreta sin tocar la sesión.
+
+        Se usa para extraer páginas: no marca la sesión como guardada ni cambia
+        el historial, porque el documento de trabajo sigue siendo el mismo.
+        """
+        document = self._document
+        session = self._edit_session
+        if document is None or session is None:
+            return None
+        try:
+            return self._export_document(
+                document,
+                destination,
+                objects=session.objects,
+                arrangement=arrangement,
+            )
+        except BeneError as error:
+            logger.warning("No se pudo exportar a %s: %s", destination, error)
+            self._show_error(error)
+            return None
+        except Exception:
+            logger.exception("Error inesperado al exportar a %s", destination)
+            QMessageBox.critical(
+                self,
+                APP_NAME,
+                "Se produjo un error inesperado al exportar.\n"
+                "El detalle técnico está en el registro.",
+            )
+            return None
 
     def _default_export_path(self, info: DocumentInfo) -> Path:
         """Nombre de exportación que no pisa una copia anterior."""
@@ -1232,6 +1784,15 @@ class MainWindow(QMainWindow):
         index = 2
         while candidate.exists():
             candidate = info.path.with_name(f"{info.path.stem}-editado-{index}.pdf")
+            index += 1
+        return candidate
+
+    def _default_extract_path(self, info: DocumentInfo) -> Path:
+        """Nombre de extracción que no pisa un archivo anterior."""
+        candidate = info.path.with_name(f"{info.path.stem}-paginas.pdf")
+        index = 2
+        while candidate.exists():
+            candidate = info.path.with_name(f"{info.path.stem}-paginas-{index}.pdf")
             index += 1
         return candidate
 

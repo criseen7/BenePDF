@@ -10,6 +10,7 @@ from bene.application.use_cases.export_document import ExportDocument
 from bene.domain.editing import ImageObject, RedactionObject, TextObject
 from bene.domain.errors import ExportError
 from bene.domain.models import DocumentInfo, PdfRect
+from bene.domain.pages import PageArrangement
 from tests.unit.fakes import FakeDocument, make_pages
 
 
@@ -43,6 +44,26 @@ def test_exporta_y_resume_los_objetos(tmp_path: Path) -> None:
     assert result.total_objects == 3
     assert destination.read_bytes() == b"%PDF-1.7 exportacion falsa"
     assert document.export_calls == [(destination, objects)]
+
+
+def test_el_resumen_omite_los_objetos_de_paginas_eliminadas(tmp_path: Path) -> None:
+    source = tmp_path / "original.pdf"
+    source.write_bytes(b"%PDF-1.7 original")
+    document = make_document(source)
+    objects = make_objects()
+
+    result = ExportDocument()(
+        document,
+        tmp_path / "copia.pdf",
+        objects=objects,
+        arrangement=PageArrangement(3, order=(0,)),
+    )
+
+    assert result.page_count == 1
+    assert result.text_count == 1
+    assert result.image_count == 0
+    assert result.redaction_count == 0
+    assert result.total_objects == 1
 
 
 def test_el_original_no_se_modifica(tmp_path: Path) -> None:

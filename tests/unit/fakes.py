@@ -5,10 +5,16 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 
-from bene.application.ports.pdf_engine import RenderedPage, TextMeasurement
+from bene.application.ports.pdf_engine import (
+    EmbeddedImage,
+    RenderedPage,
+    SearchMatch,
+    TextMeasurement,
+)
 from bene.domain.editing import EditObject, TextAlignment
 from bene.domain.errors import ExportError, PageOutOfRangeError
 from bene.domain.models import VALID_ROTATIONS, DocumentInfo, PageInfo, PageKind, PdfRect
+from bene.domain.pages import PageArrangement
 
 
 class FakeDocument:
@@ -20,6 +26,10 @@ class FakeDocument:
         self.closed = False
         self.render_calls: list[tuple[int, float, int]] = []
         self.export_calls: list[tuple[Path, tuple[EditObject, ...]]] = []
+        self.export_arrangements: list[PageArrangement | None] = []
+        self.search_calls: list[str] = []
+        self.search_results: tuple[SearchMatch, ...] = ()
+        self.page_images: dict[int, tuple[EmbeddedImage, ...]] = {}
         self.export_should_fail = False
 
     @property
@@ -30,6 +40,17 @@ class FakeDocument:
         if not 0 <= page_index < len(self._pages):
             raise PageOutOfRangeError(page_index, len(self._pages))
         return self._pages[page_index]
+
+    def page_size(self, page_index: int) -> tuple[float, float]:
+        return self.page_info(page_index).rotated_size
+
+    def search_text(self, query: str) -> tuple[SearchMatch, ...]:
+        self.search_calls.append(query)
+        return self.search_results
+
+    def images_on_page(self, page_index: int) -> tuple[EmbeddedImage, ...]:
+        self.page_info(page_index)
+        return self.page_images.get(page_index, ())
 
     def render_page(self, page_index: int, *, scale: float, rotation: int = 0) -> RenderedPage:
         page = self.page_info(page_index)
@@ -59,10 +80,17 @@ class FakeDocument:
     def close(self) -> None:
         self.closed = True
 
-    def export_to(self, destination: Path, *, objects: Iterable[EditObject]) -> None:
+    def export_to(
+        self,
+        destination: Path,
+        *,
+        objects: Iterable[EditObject],
+        arrangement: PageArrangement | None = None,
+    ) -> None:
         if self.export_should_fail:
             raise ExportError("Fallo de exportación simulado")
         self.export_calls.append((destination, tuple(objects)))
+        self.export_arrangements.append(arrangement)
         destination.write_bytes(b"%PDF-1.7 exportacion falsa")
 
     def measure_text(

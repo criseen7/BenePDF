@@ -20,7 +20,8 @@ from pathlib import Path
 from typing import Final
 
 from bene.domain.errors import EditObjectNotFoundError, InvalidEditOperationError
-from bene.domain.models import PdfRect
+from bene.domain.models import VALID_ROTATIONS, PdfRect
+from bene.domain.pages import PageArrangement
 
 SUPPORTED_FONTS: Final[tuple[str, ...]] = (
     "Helvetica",
@@ -108,6 +109,33 @@ class ImageObject:
 
 
 @dataclass(frozen=True, slots=True)
+class ImageReplacementObject:
+    """Sustituye una imagen ya incrustada en el PDF (RF-013).
+
+    ``image_id`` es un identificador opaco que entrega el motor PDF; la capa de
+    dominio no interpreta su formato. ``rect`` es la región visible que ocupaba
+    la imagen original y se usa para la vista previa.
+    """
+
+    object_id: str
+    page_index: int
+    image_id: str
+    rect: PdfRect
+    data: bytes
+    mime_type: str
+    source_path: Path | None = None
+
+    def __post_init__(self) -> None:
+        _validate_identity(self.object_id, self.page_index, self.rect)
+        if not self.image_id.strip():
+            raise ValueError("El identificador de la imagen original no puede estar vacío")
+        if not self.data:
+            raise ValueError("La imagen de reemplazo no tiene datos")
+        if self.mime_type not in SUPPORTED_IMAGE_TYPES:
+            raise ValueError(f"Tipo de imagen no soportado: {self.mime_type}")
+
+
+@dataclass(frozen=True, slots=True)
 class RedactionObject:
     """Región marcada para eliminar de forma permanente al exportar.
 
@@ -123,7 +151,7 @@ class RedactionObject:
         _validate_identity(self.object_id, self.page_index, self.rect)
 
 
-EditObject = TextObject | ImageObject | RedactionObject
+EditObject = TextObject | ImageObject | ImageReplacementObject | RedactionObject
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,6 +173,13 @@ class AddRedactionCommand:
     """Marca una región para redactarla al exportar."""
 
     redaction_object: RedactionObject
+
+
+@dataclass(frozen=True, slots=True)
+class AddImageReplacementCommand:
+    """Sustituye una imagen incrustada del PDF."""
+
+    replacement: ImageReplacementObject
 
 
 @dataclass(frozen=True, slots=True)
@@ -185,6 +220,43 @@ class DeleteObjectCommand:
             raise ValueError(f"El índice de página no puede ser negativo: {self.page_index}")
 
 
+@dataclass(frozen=True, slots=True)
+class RotatePageCommand:
+    """Acumula una rotación adicional a una página fuente."""
+
+    page_index: int
+    degrees: int
+
+    def __post_init__(self) -> None:
+        if self.page_index < 0:
+            raise ValueError(f"El índice de página no puede ser negativo: {self.page_index}")
+        if self.degrees not in VALID_ROTATIONS:
+            raise ValueError(f"Rotación de página no soportada: {self.degrees}")
+
+
+@dataclass(frozen=True, slots=True)
+class MovePageCommand:
+    """Mueve una página entre dos posiciones de salida."""
+
+    from_position: int
+    to_position: int
+
+    def __post_init__(self) -> None:
+        if self.from_position < 0 or self.to_position < 0:
+            raise ValueError("Las posiciones de página no pueden ser negativas")
+
+
+@dataclass(frozen=True, slots=True)
+class DeletePageCommand:
+    """Elimina una página fuente de la copia de trabajo."""
+
+    page_index: int
+
+    def __post_init__(self) -> None:
+        if self.page_index < 0:
+            raise ValueError(f"El índice de página no puede ser negativo: {self.page_index}")
+
+
 def _validate_transform(object_id: str, page_index: int, rect: PdfRect) -> None:
     if not object_id.strip():
         raise ValueError("El identificador del objeto no puede estar vacío")
@@ -194,17 +266,26 @@ def _validate_transform(object_id: str, page_index: int, rect: PdfRect) -> None:
         raise ValueError("El rectángulo del objeto no puede estar vacío")
 
 
-EditCommand = (
+ObjectCommand = (
     AddTextCommand
     | AddImageCommand
     | AddRedactionCommand
+    | AddImageReplacementCommand
     | MoveObjectCommand
     | ResizeObjectCommand
     | DeleteObjectCommand
 )
 
+PageCommand = RotatePageCommand | MovePageCommand | DeletePageCommand
 
-def apply_command(objects: Mapping[str, EditObject], command: EditCommand) -> dict[str, EditObject]:
+EditCommand = ObjectCommand | PageCommand
+
+PAGE_COMMANDS = (RotatePageCommand, MovePageCommand, DeletePageCommand)
+
+
+def apply_command(
+    objects: Mapping[str, EditObject], command: ObjectCommand
+) -> dict[str, EditObject]:
     """Aplica un comando y devuelve el nuevo estado, sin mutar ``objects``.
 
     Errores esperados: :class:`EditObjectNotFoundError` si el objeto no existe
@@ -218,6 +299,8 @@ def apply_command(objects: Mapping[str, EditObject], command: EditCommand) -> di
         _add(updated, command.image_object)
     elif isinstance(command, AddRedactionCommand):
         _add(updated, command.redaction_object)
+    elif isinstance(command, AddImageReplacementCommand):
+        _add(updated, command.replacement)
     elif isinstance(command, (MoveObjectCommand, ResizeObjectCommand)):
         current = _require(updated, command.object_id)
         if current.page_index != command.page_index:
@@ -251,3 +334,18 @@ def _require(objects: Mapping[str, EditObject], object_id: str) -> EditObject:
         return objects[object_id]
     except KeyError:
         raise EditObjectNotFoundError(object_id) from None
+
+
+def apply_page_command(arrangement: PageArrangement, command: PageCommand) -> PageArrangement:
+    """Aplica un comando de página y devuelve una disposición nueva.
+
+    Errores esperados: :class:`InvalidEditOperationError` si la página no está
+    presente o la operación dejaría el documento sin páginas.
+    """
+    if isinstance(command, RotatePageCommand):
+        return arrangement.rotated(command.page_index, command.degrees)
+    if isinstance(command, MovePageCommand):
+        return arrangement.moved(command.from_position, command.to_position)
+    if isinstance(command, DeletePageCommand):
+        return arrangement.without(command.page_index)
+    raise InvalidEditOperationError(f"Comando de página no soportado: {command!r}")

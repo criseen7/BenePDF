@@ -1,7 +1,7 @@
 # PLAN — Bene PDF
 
-- **Estado:** iteración 5 implementada y verificada; ejecutable construido
-- **Última actualización:** 2026-11-08
+- **Estado:** iteración 6 implementada y verificada; pendiente la revisión visual en Windows
+- **Última actualización:** 2026-11-10
 - **Especificación de referencia:** [docs/requirements.md](docs/requirements.md)
 
 ## 1. Decisiones adoptadas
@@ -365,7 +365,67 @@ renderice sin problemas. Todo con integración continua en Windows y Ubuntu.
 6. La suite rápida sigue en verde y las pruebas lentas se ejecutan aparte.
 7. `pytest`, `ruff` y `mypy` en verde.
 
-## 7. Estructura objetivo
+## 7. Iteración 6 — búsqueda, información, páginas y reemplazo de imagen
+
+**Objetivo verificable:** localizar texto y navegar a sus coincidencias, consultar
+metadatos y tamaño del archivo, reordenar/rotar/eliminar/extraer páginas y
+sustituir una imagen incrustada, todo sin modificar el PDF original y con
+deshacer/rehacer compartido con las ediciones de objetos.
+
+### Paso 1 — Información del documento (RF-022)
+
+- [x] Diálogo con metadatos, tamaño del archivo, páginas y protección
+- [x] Tamaño de la página actual y páginas que se exportarán
+- [x] Acción en el menú **Archivo** y atajo `Ctrl+Alt+I`
+
+### Paso 2 — Búsqueda de texto (RF-020)
+
+- [x] Búsqueda en segundo plano con token para descartar resultados obsoletos
+- [x] Panel con lista de coincidencias, recuento y navegación anterior/siguiente
+- [x] Resaltado de coincidencias en el lienzo y selección automática de la primera
+- [x] Aviso cuando una coincidencia está en una página eliminada de la copia
+- [x] Sin OCR: los documentos escaneados no devuelven texto
+
+### Paso 3 — Páginas (RF-021, RF-023)
+
+- [x] `PageArrangement` con índices fuente estables, orden de salida y rotación adicional
+- [x] Comandos `RotatePageCommand`, `MovePageCommand` y `DeletePageCommand` en el historial
+- [x] Rotar, mover y eliminar la página visible; eliminar pide confirmación
+- [x] Extraer una selección a un archivo nuevo sin alterar la sesión ni marcarla como guardada
+- [x] Exportación: ediciones → rotación adicional → `document.select(order)`
+- [x] Miniaturas, render y caché indexados por página fuente y rotación total
+
+### Paso 4 — Reemplazo de imagen (RF-013)
+
+- [x] Detección de imágenes con `xref` reemplazable
+- [x] `ImageReplacementObject` y `AddImageReplacementCommand`
+- [x] Diálogo con vista previa y aviso de imágenes compartidas entre páginas
+- [x] Reemplazo con `Page.replace_image` solo al exportar
+- [x] Las imágenes en línea o sin `xref` se omiten con una explicación
+
+### Paso 5 — Cierre
+
+- [x] Pruebas unitarias, de integración y de interfaz
+- [x] ADR-006 de disposición de páginas, búsqueda y reemplazo de imagen
+- [x] README y PLAN actualizados
+- [x] `pytest`, `ruff` y `mypy` en verde
+
+### Criterios de verificación de la iteración 6
+
+1. La búsqueda localiza texto, muestra las coincidencias y navega a su página;
+   una búsqueda nueva descarta los resultados de la anterior.
+2. El diálogo de información muestra páginas, tamaño, dimensiones y los
+   metadatos disponibles sin modificar el documento.
+3. Reordenar, rotar o eliminar páginas se refleja en la copia exportada; el PDF
+   original no cambia y deshacer/rehacer restaura la disposición anterior.
+4. Eliminar una página avisa de los objetos añadidos que se omitirán.
+5. Extraer páginas genera un archivo nuevo con la selección y no altera el
+   historial ni el estado «sin exportar» de la sesión.
+6. Reemplazar una imagen incrustada se aplica solo al exportar; si la imagen es
+   compartida, el diálogo avisa de que cambiará en todas sus páginas.
+7. `pytest`, `ruff` y `mypy` en verde, con la suite rápida y las pruebas lentas.
+
+## 8. Estructura objetivo
 
 ```text
 EditorPDF-Local/
@@ -382,7 +442,8 @@ EditorPDF-Local/
 │       ├── ADR-002-modelo-de-edicion.md
 │       ├── ADR-003-exportacion-y-redaccion.md
 │       ├── ADR-004-fuentes-embebidas.md
-│       └── ADR-005-empaquetado-y-ci.md
+│       ├── ADR-005-empaquetado-y-ci.md
+│       └── ADR-006-paginas-busqueda-y-reemplazo.md
 ├── scripts/
 │   ├── build_app.py          # PyInstaller con fuentes y MuPDF
 │   ├── benchmark_open.py
@@ -413,7 +474,7 @@ EditorPDF-Local/
     └── fixtures/
 ```
 
-## 8. Criterios de verificación de la iteración 1
+## 9. Criterios de verificación de la iteración 1
 
 1. `pytest` en verde en Windows (unitarias, integración y UI offscreen).
 2. `ruff check` y `ruff format --check` sin errores.
@@ -422,7 +483,7 @@ EditorPDF-Local/
 5. PDF corrupto, cifrado y escaneado: mensajes claros y sin cierre inesperado.
 6. El log existe, rota y no contiene texto del documento.
 
-## 9. Criterios de verificación de la iteración 2
+## 10. Criterios de verificación de la iteración 2
 
 1. Las cuatro rotaciones de vista convierten pantalla ↔ PDF sin desfases y la ida y vuelta conserva el punto.
 2. Se puede añadir, mover, redimensionar y eliminar texto e imágenes con la vista previa actualizada.
@@ -431,7 +492,7 @@ EditorPDF-Local/
 5. El PDF original no se modifica y no se escribe ningún archivo.
 6. `pytest`, `ruff` y `mypy` en verde y smoke real offscreen correcto.
 
-## 10. Criterios de verificación de la iteración 3
+## 11. Criterios de verificación de la iteración 3
 
 1. El texto de una región redactada no se puede extraer del archivo exportado.
 2. El PDF original conserva exactamente sus bytes y nunca se sobrescribe.
@@ -442,7 +503,7 @@ EditorPDF-Local/
 7. Los PDF cifrados se rechazan de forma explícita y no se degrada su protección.
 8. `pytest`, `ruff` y `mypy` en verde y smoke real offscreen correcto.
 
-## 11. Riesgos abiertos
+## 12. Riesgos abiertos
 
 | Riesgo | Impacto | Mitigación |
 |---|---|---|
@@ -454,8 +515,11 @@ EditorPDF-Local/
 | El build depende de hooks de PyInstaller para PySide6/PyMuPDF | Medio | `--collect-all pymupdf`, comprobación de fuentes y `--version` en CI |
 | La accesibilidad automática no equivale a un lector de pantalla | Medio | Nombres, etiquetas y orden de tabulación probados; falta revisión manual con Narrador/Orca |
 | Linux no se ha probado visualmente | Bajo | CI ejecuta pruebas offscreen en Ubuntu con las bibliotecas de Qt |
+| La búsqueda no incluye OCR | Bajo | Se documenta; los escaneos no devuelven texto hasta la iteración 7 |
+| Reemplazar una imagen compartida cambia todas sus apariciones | Medio | El diálogo muestra las páginas afectadas antes de aceptar |
+| Algunas imágenes no se pueden reemplazar (en línea, formularios, sin `xref`) | Bajo | Se omiten en la detección y el diálogo explica la limitación |
 
-## 12. Backlog posterior
+## 13. Backlog posterior
 
 | Iteración | Contenido |
 |---|---|
@@ -463,10 +527,10 @@ EditorPDF-Local/
 | 3 | **Completada:** redacción permanente con confirmación, exportación atómica a un archivo nuevo y pruebas de no extracción |
 | 4 | **Completada:** corrección del redimensionado y de la exportación en páginas rotadas/recortadas, fuentes embebidas y avisos de overflow |
 | 5 | **Completada:** errores de exportación accionables, accesibilidad, PDFs de 100 páginas, PyInstaller, CI en Windows/Ubuntu y ADR-005 |
-| 6 | Búsqueda de texto, información del documento, operaciones de páginas (rotar, reordenar, eliminar, extraer), reemplazo de imagen |
+| 6 | **Completada:** búsqueda de texto, información del documento, operaciones de páginas (rotar, reordenar, eliminar, extraer) y reemplazo de imagen |
 | 7 | OCR local opcional y comparación antes/después |
 
-## 13. Bitácora
+## 14. Bitácora
 
 | Fecha | Avance |
 |---|---|
@@ -486,8 +550,9 @@ EditorPDF-Local/
 | 2026-11-07 | Iteración 4 iniciada: plan de corrección del redimensionado y de la exportación. Diagnóstico confirmado (asas desfasadas, `rotate` invertido, métricas Qt/PyMuPDF, `€` no soportado, destino obsoleto y CropBox+rotación). Paso 0: pruebas de regresión con 9 fallos esperados. |
 | 2026-11-07 | Iteración 4 completada. Asas e hit-test sobre el preview, **Shift** conserva la proporción y sin Shift la imagen se estira; `rotate=page.rotation`; fuentes Liberation embebidas con *fallback* a Base-14; `measure_text` y aviso de overflow; nombre de exportación sin colisiones y aviso de destino intacto; transformación visible→página con CropBox y `/Rotate` para texto, imagen y redacción. ADR-004, requisitos y README actualizados. 437 pruebas en verde, `ruff` y `mypy` sin errores. |
 | 2026-11-08 | Iteración 5 completada. Errores de exportación accionables para permisos, disco lleno y fallo de reemplazo, con el destino intacto; nombres accesibles, etiquetas asociadas y orden de tabulación en ventana, diálogo, propiedades y miniaturas; pruebas de 100 páginas de texto y escaneadas marcadas `slow`; `scripts/build_app.py` y extra `build`; CI para Windows y Ubuntu con trabajos de calidad, lentas y empaquetado; ADR-005, README y PLAN actualizados. Ejecutable `dist/BenePDF/BenePDF.exe` construido y verificado con `--version`. |
+| 2026-11-10 | Iteración 6 completada. Búsqueda de texto en segundo plano con resaltado y navegación; diálogo de información con metadatos, tamaño y páginas de salida; `PageArrangement` con índices fuente estables y comandos de rotar, mover y eliminar páginas en el historial; extracción de una selección sin alterar la sesión; reemplazo de imágenes incrustadas con aviso de imágenes compartidas; exportación con orden, eliminación y rotación adicional; ADR-006, README y PLAN actualizados. Revisión de la iteración 5/6: se corrigió la validación de rango en objetos, se hizo inmutable `PageArrangement.rotations`, su igualdad incluye la rotación y el resumen de exportación ya no cuenta objetos de páginas eliminadas. 562 pruebas rápidas y 2 lentas en verde, `ruff` y `mypy` limpios. |
 
-## 14. Notas de entorno
+## 15. Notas de entorno
 
 - El paquete y el comando se llaman `bene`. El bloque de estructura de `docs/requirements.md` todavía usa `pdf-studio-local`/`pdf_studio` porque es el documento original del usuario; este plan y el código usan `bene`.
 - **Desviación del plan original:** las rutas se calculan con la biblioteca estándar (`LOCALAPPDATA` en Windows; `XDG_DATA_HOME`/`XDG_STATE_HOME` en Linux) y no con `QStandardPaths`. Motivo: mantener `config.py`, el registro y `bootstrap.py` libres de Qt, de modo que se puedan probar sin `QApplication` y que el arranque no dependa de la inicialización gráfica. En Windows la ubicación es la misma que daría Qt: `%LOCALAPPDATA%\bene-pdf`.

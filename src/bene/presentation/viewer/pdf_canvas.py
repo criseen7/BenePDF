@@ -27,6 +27,7 @@ from bene.application.ports.pdf_engine import RenderedPage
 from bene.domain.editing import (
     EditObject,
     ImageObject,
+    ImageReplacementObject,
     RedactionObject,
     TextAlignment,
     TextObject,
@@ -44,6 +45,9 @@ SELECTION_COLOR = QColor("#3daee9")
 REGION_COLOR = QColor(61, 174, 233, 55)
 REDACTION_COLOR = QColor(16, 16, 16, 200)
 REDACTION_BORDER = QColor("#e5534b")
+REPLACEMENT_BORDER = QColor("#2f9e44")
+SEARCH_COLOR = QColor(255, 214, 0, 70)
+SEARCH_CURRENT_BORDER = QColor("#ff9f1a")
 OVERFLOW_COLOR = QColor("#e5534b")
 HANDLE_COLOR = QColor("#ffffff")
 HANDLE_SIZE: Final[int] = 10
@@ -106,6 +110,8 @@ class PdfCanvas(QWidget):
         self._region_view: QRectF | None = None
         self._image_cache: dict[str, QImage] = {}
         self._overflow_ids: set[str] = set()
+        self._search_rects: tuple[PdfRect, ...] = ()
+        self._search_current: PdfRect | None = None
 
         self._drag_mode: str | None = None
         self._drag_origin = QPointF()
@@ -159,6 +165,14 @@ class PdfCanvas(QWidget):
     @property
     def overflow_ids(self) -> frozenset[str]:
         return frozenset(self._overflow_ids)
+
+    @property
+    def search_highlights(self) -> tuple[PdfRect, ...]:
+        return self._search_rects
+
+    @property
+    def current_search_highlight(self) -> PdfRect | None:
+        return self._search_current
 
     # ---------------------------------------------------------------- estado
 
@@ -224,6 +238,22 @@ class PdfCanvas(QWidget):
     def clear_region(self) -> None:
         self.set_region(None)
 
+    def set_search_highlights(
+        self,
+        rects: Iterable[PdfRect],
+        current: PdfRect | None = None,
+    ) -> None:
+        """Resalta las coincidencias de búsqueda de la página actual."""
+        highlights = tuple(rects)
+        if highlights == self._search_rects and current == self._search_current:
+            return
+        self._search_rects = highlights
+        self._search_current = current
+        self.update()
+
+    def clear_search_highlights(self) -> None:
+        self.set_search_highlights((), None)
+
     def select_object(self, object_id: str | None) -> None:
         if object_id is not None and not any(obj.object_id == object_id for obj in self._objects):
             object_id = None
@@ -256,8 +286,22 @@ class PdfCanvas(QWidget):
 
         for obj in self._objects:
             self._paint_object(painter, obj)
+        self._paint_search(painter)
         self._paint_region(painter)
         self._paint_selection(painter)
+
+    def _paint_search(self, painter: QPainter) -> None:
+        mapper = self._mapper
+        if mapper is None or not self._search_rects:
+            return
+        painter.setBrush(SEARCH_COLOR)
+        painter.setPen(Qt.PenStyle.NoPen)
+        for rect in self._search_rects:
+            painter.drawRect(QRectF(*mapper.rect_to_view(rect)))
+        if self._search_current is not None:
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(SEARCH_CURRENT_BORDER, 2))
+            painter.drawRect(QRectF(*mapper.rect_to_view(self._search_current)))
 
     def _paint_object(self, painter: QPainter, obj: EditObject) -> None:
         mapper = self._mapper
@@ -284,6 +328,15 @@ class PdfCanvas(QWidget):
                 )
             else:
                 painter.drawImage(view_rect, image)
+        elif isinstance(obj, ImageReplacementObject):
+            image = self._image_for(obj)
+            if image.isNull():
+                painter.fillRect(view_rect, QColor(180, 60, 60, 80))
+            else:
+                painter.drawImage(view_rect, image)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(REPLACEMENT_BORDER, 1, Qt.PenStyle.DashLine))
+            painter.drawRect(view_rect)
         elif isinstance(obj, RedactionObject):
             self._paint_redaction(painter, view_rect)
 
@@ -595,7 +648,7 @@ class PdfCanvas(QWidget):
 
         return PdfRect(x0, y0, x1, y1)
 
-    def _image_for(self, obj: ImageObject) -> QImage:
+    def _image_for(self, obj: ImageObject | ImageReplacementObject) -> QImage:
         cached = self._image_cache.get(obj.object_id)
         if cached is not None:
             return cached
