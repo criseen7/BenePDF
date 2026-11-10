@@ -430,7 +430,8 @@ deshacer/rehacer compartido con las ediciones de objetos.
 ```text
 EditorPDF-Local/
 ├── PLAN.md
-├── README.md
+├── README.md                 # guía principal en inglés
+├── README.es.md              # guía en español
 ├── pyproject.toml
 ├── .github/
 │   └── workflows/
@@ -552,6 +553,7 @@ EditorPDF-Local/
 | 2026-11-08 | Iteración 5 completada. Errores de exportación accionables para permisos, disco lleno y fallo de reemplazo, con el destino intacto; nombres accesibles, etiquetas asociadas y orden de tabulación en ventana, diálogo, propiedades y miniaturas; pruebas de 100 páginas de texto y escaneadas marcadas `slow`; `scripts/build_app.py` y extra `build`; CI para Windows y Ubuntu con trabajos de calidad, lentas y empaquetado; ADR-005, README y PLAN actualizados. Ejecutable `dist/BenePDF/BenePDF.exe` construido y verificado con `--version`. |
 | 2026-11-10 | Iteración 6 completada. Búsqueda de texto en segundo plano con resaltado y navegación; diálogo de información con metadatos, tamaño y páginas de salida; `PageArrangement` con índices fuente estables y comandos de rotar, mover y eliminar páginas en el historial; extracción de una selección sin alterar la sesión; reemplazo de imágenes incrustadas con aviso de imágenes compartidas; exportación con orden, eliminación y rotación adicional; ADR-006, README y PLAN actualizados. Revisión de la iteración 5/6: se corrigió la validación de rango en objetos, se hizo inmutable `PageArrangement.rotations`, su igualdad incluye la rotación y el resumen de exportación ya no cuenta objetos de páginas eliminadas. 562 pruebas rápidas y 2 lentas en verde, `ruff` y `mypy` limpios. |
 | 2026-11-10 | Corregido el CI de Windows: PyMuPDF 2.1 declara constantes que 2.0 solo expone en tiempo de ejecución, así que los `# type: ignore` sobraban en CI y faltaban en local. Las constantes de redacción y cifrado se leen con un auxiliar `getattr` que funciona con ambas versiones. Verificado con PyMuPDF 2.0 y 2.1: 562 pruebas rápidas y 2 lentas en verde, `ruff` y `mypy` limpios. |
+| 2026-11-10 | README bilingüe: `README.md` pasa a ser la guía principal en inglés y el contenido español se conserva en `README.es.md`, con enlaces cruzados entre ambos. Se anota que la interfaz y la documentación detallada siguen en español. |
 
 ## 15. Notas de entorno
 

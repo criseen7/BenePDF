@@ -229,6 +229,7 @@ Las coordenadas deben manejarse en un sistema consistente (coordenadas de págin
 ```text
 pdf-studio-local/
 ├── README.md
+├── README.es.md
 ├── LICENSE
 ├── pyproject.toml
 ├── requirements-dev.txt
