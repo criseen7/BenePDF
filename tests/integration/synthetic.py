@@ -14,9 +14,15 @@ import pymupdf
 A4_WIDTH = 595.0
 A4_HEIGHT = 842.0
 
+
+def _pymupdf_constant(name: str) -> int:
+    """Lee constantes que las anotaciones de PyMuPDF no siempre declaran."""
+    return cast(int, getattr(pymupdf, name))
+
+
 # Las anotaciones de PyMuPDF 2.0 no exponen esta constante, aunque existe en
-# tiempo de ejecución.
-ENCRYPTION_AES_256 = cast(int, pymupdf.PDF_ENCRYPT_AES_256)  # type: ignore[attr-defined]
+# tiempo de ejecución; 2.1 ya la incluye.
+ENCRYPTION_AES_256 = _pymupdf_constant("PDF_ENCRYPT_AES_256")
 
 
 def make_text_pdf(path: Path, *, pages: int = 1, title: str | None = None) -> Path:

@@ -507,7 +507,7 @@ EditorPDF-Local/
 
 | Riesgo | Impacto | Mitigación |
 |---|---|---|
-| PyMuPDF 2.0 es muy reciente | Alto | Versión fijada `>=2.0,<3`; plan B: `1.28.2` con el parche de redacción |
+| PyMuPDF 2.0 es muy reciente | Alto | Versión fijada `>=2.0,<3`; probado con 2.0 y 2.1; las constantes se leen por nombre para tolerar cambios en las anotaciones; plan B: `1.28.2` con el parche de redacción |
 | La vista previa por capas no reproduce el resultado exacto | Medio | Botón de vista previa exacta aplicando comandos a una copia en memoria |
 | Redacción puede eliminar objetos solapados | Alto | Vista previa con la zona marcada, confirmación explícita y pruebas con objetos cercanos |
 | Rendimiento en PDF escaneados de gran tamaño | Medio | Render bajo demanda, caché acotada y tareas en segundo plano; prueba de 100 páginas marcada `slow` |
@@ -551,6 +551,7 @@ EditorPDF-Local/
 | 2026-11-07 | Iteración 4 completada. Asas e hit-test sobre el preview, **Shift** conserva la proporción y sin Shift la imagen se estira; `rotate=page.rotation`; fuentes Liberation embebidas con *fallback* a Base-14; `measure_text` y aviso de overflow; nombre de exportación sin colisiones y aviso de destino intacto; transformación visible→página con CropBox y `/Rotate` para texto, imagen y redacción. ADR-004, requisitos y README actualizados. 437 pruebas en verde, `ruff` y `mypy` sin errores. |
 | 2026-11-08 | Iteración 5 completada. Errores de exportación accionables para permisos, disco lleno y fallo de reemplazo, con el destino intacto; nombres accesibles, etiquetas asociadas y orden de tabulación en ventana, diálogo, propiedades y miniaturas; pruebas de 100 páginas de texto y escaneadas marcadas `slow`; `scripts/build_app.py` y extra `build`; CI para Windows y Ubuntu con trabajos de calidad, lentas y empaquetado; ADR-005, README y PLAN actualizados. Ejecutable `dist/BenePDF/BenePDF.exe` construido y verificado con `--version`. |
 | 2026-11-10 | Iteración 6 completada. Búsqueda de texto en segundo plano con resaltado y navegación; diálogo de información con metadatos, tamaño y páginas de salida; `PageArrangement` con índices fuente estables y comandos de rotar, mover y eliminar páginas en el historial; extracción de una selección sin alterar la sesión; reemplazo de imágenes incrustadas con aviso de imágenes compartidas; exportación con orden, eliminación y rotación adicional; ADR-006, README y PLAN actualizados. Revisión de la iteración 5/6: se corrigió la validación de rango en objetos, se hizo inmutable `PageArrangement.rotations`, su igualdad incluye la rotación y el resumen de exportación ya no cuenta objetos de páginas eliminadas. 562 pruebas rápidas y 2 lentas en verde, `ruff` y `mypy` limpios. |
+| 2026-11-10 | Corregido el CI de Windows: PyMuPDF 2.1 declara constantes que 2.0 solo expone en tiempo de ejecución, así que los `# type: ignore` sobraban en CI y faltaban en local. Las constantes de redacción y cifrado se leen con un auxiliar `getattr` que funciona con ambas versiones. Verificado con PyMuPDF 2.0 y 2.1: 562 pruebas rápidas y 2 lentas en verde, `ruff` y `mypy` limpios. |
 
 ## 15. Notas de entorno
 

@@ -61,15 +61,23 @@ SCANNED_COVERAGE_THRESHOLD: Final[float] = 0.5
 MAX_RENDER_PIXELS: Final[int] = 40_000_000
 """Límite de píxeles por render (≈ 40 MP, unos 120 MB en RGB888)."""
 
-# PyMuPDF 2.0 no declara estas constantes en sus anotaciones, aunque existen en
-# tiempo de ejecución.
-REDACT_IMAGE_PIXELS: Final[int] = cast(int, pymupdf.PDF_REDACT_IMAGE_PIXELS)  # type: ignore[attr-defined]
-REDACT_LINE_ART_REMOVE_IF_TOUCHED: Final[int] = cast(
-    int,
-    pymupdf.PDF_REDACT_LINE_ART_REMOVE_IF_TOUCHED,  # type: ignore[attr-defined]
+
+def _pdf_constant(name: str) -> int:
+    """Lee una constante de PyMuPDF por su nombre.
+
+    Las anotaciones de PyMuPDF 2.0 no declaran algunas constantes que sí
+    existen en tiempo de ejecución; 2.1 ya las incluye. Acceder con
+    ``getattr`` mantiene el código válido con ambas versiones.
+    """
+    return cast(int, getattr(pymupdf, name))
+
+
+REDACT_IMAGE_PIXELS: Final[int] = _pdf_constant("PDF_REDACT_IMAGE_PIXELS")
+REDACT_LINE_ART_REMOVE_IF_TOUCHED: Final[int] = _pdf_constant(
+    "PDF_REDACT_LINE_ART_REMOVE_IF_TOUCHED"
 )
-REDACT_TEXT_REMOVE: Final[int] = cast(int, pymupdf.PDF_REDACT_TEXT_REMOVE)  # type: ignore[attr-defined]
-ANNOT_REDACT: Final[int] = cast(int, pymupdf.PDF_ANNOT_REDACT)  # type: ignore[attr-defined]
+REDACT_TEXT_REMOVE: Final[int] = _pdf_constant("PDF_REDACT_TEXT_REMOVE")
+ANNOT_REDACT: Final[int] = _pdf_constant("PDF_ANNOT_REDACT")
 
 
 def classify_page(
