@@ -305,6 +305,12 @@ class MainWindow(QMainWindow):
     def zoom_out(self) -> None:
         self.set_zoom(next_zoom(self._effective_scale(), direction=-1))
 
+    def _on_zoom_requested(self, direction: int) -> None:
+        if direction > 0:
+            self.zoom_in()
+        else:
+            self.zoom_out()
+
     def set_fit_mode(self, mode: FitMode) -> None:
         if self._document is None:
             return
@@ -343,6 +349,7 @@ class MainWindow(QMainWindow):
         self._canvas.redaction_requested.connect(self._on_redaction_requested)
         self._canvas.placement_requested.connect(self._on_placement_requested)
         self._canvas.stroke_requested.connect(self._on_stroke_requested)
+        self._canvas.zoom_requested.connect(self._on_zoom_requested)
         self._scroll = QScrollArea(self)
         self._scroll.setWidget(self._canvas)
         self._scroll.setWidgetResizable(False)
@@ -734,6 +741,19 @@ class MainWindow(QMainWindow):
         QWidget.setTabOrder(self._next_button, self._thumbnails)
         QWidget.setTabOrder(self._thumbnails, self._canvas)
 
+    def _update_window_title(self) -> None:
+        """Título de la ventana con el documento y el aviso de cambios sin exportar."""
+        info = self._document_info
+        if info is None:
+            self.setWindowTitle(APP_NAME)
+            return
+        title = f"{APP_NAME} — {info.title}"
+        if info.encrypted:
+            title += " (cifrado)"
+        if self.is_dirty:
+            title += " *"
+        self.setWindowTitle(title)
+
     def _update_ui(self) -> None:
         has_document = self._document_info is not None
         for action in self._document_actions:
@@ -769,10 +789,7 @@ class MainWindow(QMainWindow):
                 "Guardar una copia nueva con los cambios; el original no se modifica"
             )
 
-        title = f"{APP_NAME} — {info.title}"
-        if info.encrypted:
-            title += " (cifrado)"
-        self.setWindowTitle(title)
+        self._update_window_title()
         self._status_document.setText(info.title)
 
         self._page_spin.blockSignals(True)
@@ -1523,6 +1540,7 @@ class MainWindow(QMainWindow):
             self._delete_action.setEnabled(False)
             self._status_edit.setText("Sin cambios")
             self._update_page_actions(None)
+            self._update_window_title()
             return
 
         source_index = self._source_page_index()
@@ -1546,6 +1564,7 @@ class MainWindow(QMainWindow):
         if self._canvas.selected_object_id != self._selected_object_id:
             self._canvas.select_object(self._selected_object_id)
         self._update_page_actions(session)
+        self._update_window_title()
 
     def _update_page_actions(self, session: EditSession | None) -> None:
         if session is None:

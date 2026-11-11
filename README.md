@@ -4,13 +4,15 @@
 
 Desktop application to view, organize, and edit PDF documents without uploading anything to external services.
 
-The project is under construction. Iterations 1 to 3 cover opening, viewing, navigation, zoom, view rotation, thumbnails, in-memory editing of text and images, permanent redaction, and safe export to a new file. Iteration 4 fixes resizing and export on rotated or cropped pages, embeds fonts, and warns about text that does not fit. Iteration 5 adds actionable export errors, keyboard accessibility, tests with 100-page documents, PyInstaller packaging, and continuous integration. Iteration 6 adds text search, document information, page rotation/reordering/deletion/extraction, and replacement of embedded images. Iteration 7 adds freehand drawing with configurable color and thickness, selectable and resizable vector strokes.
+The project is under construction. Iterations 1 to 3 cover opening, viewing, navigation, zoom, view rotation, thumbnails, in-memory editing of text and images, permanent redaction, and safe export to a new file. Iteration 4 fixes resizing and export on rotated or cropped pages, embeds fonts, and warns about text that does not fit. Iteration 5 adds actionable export errors, keyboard accessibility, tests with 100-page documents, PyInstaller packaging, and continuous integration. Iteration 6 adds text search, document information, page rotation/reordering/deletion/extraction, and replacement of embedded images. Iteration 7 adds freehand drawing with configurable color and thickness, selectable and resizable vector strokes. The integrity review from the roadmap now also removes annotations and form fields that intersect a redaction, and adds `Ctrl`+wheel zoom and an unsaved-changes marker in the window title.
 
 > The application interface and the detailed project documentation are currently in Spanish. This guide translates the interface labels into English for readability; the [Spanish README](README.es.md) shows them as they appear in the application.
 
 - Requirements and acceptance criteria: [docs/requirements.md](docs/requirements.md)
-- Work plan and status: [PLAN.md](PLAN.md)
+- Main roadmap: [BenePDF_Plan_Mejoras_Evolucion_Correcciones.md](BenePDF_Plan_Mejoras_Evolucion_Correcciones.md)
+- Work plan, status, and iteration log: [PLAN.md](PLAN.md)
 - Architecture decisions: [docs/decisions/](docs/decisions/)
+- Changes by version: [CHANGELOG.md](CHANGELOG.md)
 
 ## Requirements
 
@@ -99,7 +101,7 @@ Changes are kept **only in memory** during the session: the original PDF is neve
 7. **Delete** (`Delete`): removes the selected object.
 8. **Undo / Redo** (`Ctrl+Z` / `Ctrl+Y`): traverses the full session history, including redactions, strokes, and page operations.
 
-The status bar shows **Unsaved changes** when there are active edits. When closing the document, opening another PDF, or quitting, the application offers **Save**, **Discard**, or **Cancel**.
+The status bar shows **Unsaved changes** when there are active edits, and the window title is marked with `*`. When closing the document, opening another PDF, or quitting, the application offers **Save**, **Discard**, or **Cancel**.
 
 ### Export the result
 
@@ -109,7 +111,7 @@ The status bar shows **Unsaved changes** when there are active edits. When closi
 4. Bene PDF applies the redactions, inserts the new text, images, and strokes, adds the page rotation, and finally reorders and deletes pages according to the working copy.
 5. Bene PDF writes to a temporary file first, reopens it to validate it, and only then replaces the destination. If anything fails, the original file and the previous destination remain intact; the error message states this explicitly.
 
-The exported file can be opened again and contains the applied text, images, strokes, redactions, image replacements, and page layout. Redaction removes the underlying text (not just covers it) and, on scanned pages, erases only the pixels in the marked region.
+The exported file can be opened again and contains the applied text, images, strokes, redactions, image replacements, and page layout. Redaction removes the underlying text (not just covers it); on scanned pages it erases only the pixels in the marked region, and it deletes annotations and form fields whose area intersects the redaction. Document metadata and embedded attachments are outside the redaction region and are not sanitized.
 
 To save only some pages, use **Page → Extract pages…**; extraction creates a new file and does not change the working session.
 
@@ -117,7 +119,7 @@ Encrypted PDFs cannot be exported in this iteration: PyMuPDF would need the owne
 
 ### Zoom and fit
 
-- **Zoom in** / **Zoom out**: toolbar buttons or `Ctrl++` / `Ctrl+-`.
+- **Zoom in** / **Zoom out**: toolbar buttons, `Ctrl++` / `Ctrl+-`, or `Ctrl`+mouse wheel over the page.
 - **100%**: `Ctrl+0`.
 - **Fit width**: `Ctrl+1`.
 - **Fit page**: `Ctrl+2`.
@@ -233,6 +235,7 @@ You can also generate a single file with `--onefile`, although it takes longer t
 - A stroke is new vector content; it covers text but does not remove it. Use redaction for permanent removal.
 - The thickness of a stroke is fixed when it is created; resizing changes its shape, not its line width.
 - Redaction may affect objects that overlap the marked region; review it before exporting.
+- Redaction removes page content, annotations, and form fields that intersect the region, but it does not clean document metadata or embedded attachments.
 - If a particular page cannot be rendered, a warning is shown and the details are written to the log.
 - The interface has been verified in offscreen mode on Windows (and in CI on Ubuntu); a visual review with a real display, DPI, and screen reader is still pending before a distributable version.
 - Linux is tested in CI in offscreen mode but has not been validated visually.

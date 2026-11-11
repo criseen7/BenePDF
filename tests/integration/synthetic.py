@@ -39,6 +39,39 @@ def make_text_pdf(path: Path, *, pages: int = 1, title: str | None = None) -> Pa
     return path
 
 
+def make_annotation_form_pdf(path: Path) -> Path:
+    """PDF con texto, anotaciones y campos de formulario dentro y fuera de una zona.
+
+    Las anotaciones y los *widgets* de formulario no los elimina
+    ``Page.apply_redactions``; este documento permite comprobar que la
+    exportación los borra cuando intersectan una redacción y conserva los demás.
+    """
+    document = pymupdf.open()
+    page = document.new_page(width=A4_WIDTH, height=A4_HEIGHT)
+    page.insert_text((72, 100), "Texto sensible dentro de la redacción", fontsize=12)
+    page.insert_text((72, 700), "Texto visible fuera de la redacción", fontsize=12)
+    page.add_text_annot((90, 90), "Nota sensible")
+    page.add_text_annot((400, 600), "Nota visible")
+
+    inside = pymupdf.Widget()
+    inside.field_name = "campo_dentro"
+    inside.field_value = "Valor sensible"
+    inside.rect = pymupdf.Rect(200, 200, 350, 230)
+    inside.field_type = _pymupdf_constant("PDF_WIDGET_TYPE_TEXT")
+    page.add_widget(inside)
+
+    outside = pymupdf.Widget()
+    outside.field_name = "campo_fuera"
+    outside.field_value = "Valor visible"
+    outside.rect = pymupdf.Rect(200, 600, 350, 630)
+    outside.field_type = _pymupdf_constant("PDF_WIDGET_TYPE_TEXT")
+    page.add_widget(outside)
+
+    document.save(path)
+    document.close()
+    return path
+
+
 def make_empty_pdf(path: Path) -> Path:
     """PDF con una página en blanco."""
     document = pymupdf.open()

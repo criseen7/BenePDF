@@ -1,7 +1,8 @@
 # PLAN — Bene PDF
 
-- **Estado:** iteración 7 implementada y verificada; pendiente la revisión visual en Windows
+- **Estado:** iteraciones 1 a 7 implementadas; correcciones P0/P1 de la hoja de ruta aplicadas; pendiente la revisión visual en Windows
 - **Última actualización:** 2026-11-10
+- **Hoja de ruta principal:** [BenePDF_Plan_Mejoras_Evolucion_Correcciones.md](BenePDF_Plan_Mejoras_Evolucion_Correcciones.md)
 - **Especificación de referencia:** [docs/requirements.md](docs/requirements.md)
 
 ## 1. Decisiones adoptadas
@@ -15,7 +16,8 @@
 | Motor PDF | PyMuPDF 2.0 (`pymupdf`) tras el puerto `PdfEngine` | Render, inserción de texto e imágenes y redacción real con una sola dependencia |
 | Modelo de edición | Comandos inmutables en memoria; el PDF fuente nunca se modifica | Deshacer/rehacer correcto y cumplimiento de RN-001 y RN-008 |
 | Persistencia | Nada se guarda hasta exportar; la exportación escribe a temporal y valida | Integridad del archivo original (RNF-005) |
-| Redacción | Se aplica antes que el contenido nuevo; texto y vectores se eliminan, las imágenes se redactan por píxeles | Permite «redactar y escribir encima» sin destruir escaneos completos (RN-004, RNF-008) |
+| Redacción | Se aplica antes que el contenido nuevo; texto, vectores, anotaciones y campos que intersectan se eliminan, las imágenes se redactan por píxeles | Permite «redactar y escribir encima» sin destruir escaneos completos y evita que queden datos sensibles en anotaciones o formularios (RN-004, RNF-008) |
+| Hoja de ruta | `BenePDF_Plan_Mejoras_Evolucion_Correcciones.md` es la referencia de prioridades; `PLAN.md` registra la ejecución | Separa el plan estratégico del historial de iteraciones y evita duplicar decisiones |
 | Dibujo libre | Trazos vectoriales con puntos en coordenadas visibles y grosor en puntos PDF | Se seleccionan y transforman como el resto de objetos y no pierden calidad al ampliar (RF-026, ADR-007) |
 | Empaquetado | PyInstaller 6 en modo carpeta (`--onedir`) | Incluye Qt, MuPDF y fuentes sin exigir Python en destino (RNF-016) |
 | CI | GitHub Actions en Windows y Ubuntu, pruebas lentas aparte | Detecta regresiones de plataforma y mantiene la suite rápida (RNF-017) |
@@ -478,6 +480,22 @@ deshacerlos y exportarlos como vectores sin modificar el PDF original.
 6. El resumen y el registro de exportación cuentan los trazos.
 7. `pytest`, `ruff` y `mypy` en verde, con la suite rápida y las pruebas lentas.
 
+### Revisión de integridad y UX de la hoja de ruta (2026-11-10)
+
+Se revisó `BenePDF_Plan_Mejoras_Evolucion_Correcciones.md` contra el código y se
+aplicaron solo las correcciones P0/P1 de bajo riesgo:
+
+- [x] La redacción elimina las anotaciones y los campos de formulario que
+      intersectan la región; los de fuera se conservan.
+- [x] Documento sintético con texto, anotaciones y campos dentro y fuera de la
+      zona, y pruebas de extracción y renderizado.
+- [x] Pruebas de redacción parcial de texto y de eliminación de vectores.
+- [x] Zoom con `Ctrl`+rueda sobre el lienzo, con señal `zoom_requested`.
+- [x] El título de la ventana marca los cambios sin exportar con `*`.
+- [x] ADR-003, README bilingüe, AGENTS y CHANGELOG actualizados.
+- [x] Se documenta que la redacción por región no sanea metadatos ni adjuntos.
+- [ ] Revisión visual en Windows y prueba del ejecutable en una máquina limpia.
+
 ## 9. Estructura objetivo
 
 ```text
@@ -485,6 +503,8 @@ EditorPDF-Local/
 ├── PLAN.md
 ├── README.md                 # guía principal en inglés
 ├── README.es.md              # guía en español
+├── BenePDF_Plan_Mejoras_Evolucion_Correcciones.md  # hoja de ruta principal
+├── CHANGELOG.md
 ├── pyproject.toml
 ├── .github/
 │   └── workflows/
@@ -497,7 +517,8 @@ EditorPDF-Local/
 │       ├── ADR-003-exportacion-y-redaccion.md
 │       ├── ADR-004-fuentes-embebidas.md
 │       ├── ADR-005-empaquetado-y-ci.md
-│       └── ADR-006-paginas-busqueda-y-reemplazo.md
+│       ├── ADR-006-paginas-busqueda-y-reemplazo.md
+│       └── ADR-007-dibujo-libre.md
 ├── scripts/
 │   ├── build_app.py          # PyInstaller con fuentes y MuPDF
 │   ├── benchmark_open.py
@@ -575,6 +596,7 @@ EditorPDF-Local/
 | Un trazo con muchísimos puntos engorda el PDF y ralentiza la vista previa | Bajo | El lienzo descarta muestras muy próximas; el trazo se guarda como vector, no como imagen |
 | El grosor no cambia al redimensionar un trazo | Bajo | Es una decisión de ADR-007; para engrosarlo se dibuja de nuevo o se ajusta el estilo antes |
 | Dibujar no sustituye a la redacción | Medio | La interfaz y la documentación recuerdan que un trazo tapa pero no elimina el texto subyacente (RN-009) |
+| La redacción por región no limpia metadatos ni adjuntos | Medio | Se documenta la limitación; un saneamiento completo requiere una acción explícita sobre el documento |
 
 ## 14. Backlog posterior
 
@@ -586,6 +608,7 @@ EditorPDF-Local/
 | 5 | **Completada:** errores de exportación accionables, accesibilidad, PDFs de 100 páginas, PyInstaller, CI en Windows/Ubuntu y ADR-005 |
 | 6 | **Completada:** búsqueda de texto, información del documento, operaciones de páginas (rotar, reordenar, eliminar, extraer) y reemplazo de imagen |
 | 7 | **Completada:** dibujo libre con trazos vectoriales, color y grosor, transformación, historial y exportación (ADR-007) |
+| Hoja de ruta | **P0 aplicado:** redacción de anotaciones y campos; **P1 aplicado:** `Ctrl`+rueda y marca de cambios en el título. Pendientes: OCR local opcional, líneas/formas/flechas, resaltador, comparación antes/después, procesamiento por lotes y firmas |
 | 8 | OCR local opcional, líneas/formas/flechas, resaltador y comparación antes/después |
 
 ## 15. Bitácora
@@ -612,6 +635,7 @@ EditorPDF-Local/
 | 2026-11-10 | Corregido el CI de Windows: PyMuPDF 2.1 declara constantes que 2.0 solo expone en tiempo de ejecución, así que los `# type: ignore` sobraban en CI y faltaban en local. Las constantes de redacción y cifrado se leen con un auxiliar `getattr` que funciona con ambas versiones. Verificado con PyMuPDF 2.0 y 2.1: 562 pruebas rápidas y 2 lentas en verde, `ruff` y `mypy` limpios. |
 | 2026-11-10 | README bilingüe: `README.md` pasa a ser la guía principal en inglés y el contenido español se conserva en `README.es.md`, con enlaces cruzados entre ambos. Se anota que la interfaz y la documentación detallada siguen en español. |
 | 2026-11-10 | Iteración 7 completada. Dibujo libre con `StrokeStyle`, `StrokeObject` y `AddStrokeCommand`; puntos en coordenadas visibles y caja calculada con el grosor; mover y redimensionar transforman los puntos y conservan el grosor; herramienta **Dibujar** (`Ctrl+Shift+D`) con vista previa, deduplicación y barra de color/grosor; panel de propiedades y memoria del último estilo de texto; exportación vectorial con `draw_polyline`/`draw_circle`, rotaciones, CropBox, redacción y páginas eliminadas; `stroke_count` en el resumen; ADR-007, requisitos y README bilingüe actualizados. 605 pruebas rápidas y 2 lentas en verde, `ruff` y `mypy` limpios. |
+| 2026-11-10 | Adoptada `BenePDF_Plan_Mejoras_Evolucion_Correcciones.md` como hoja de ruta principal. Revisión de integridad: `Page.apply_redactions` no borraba anotaciones ni campos de formulario; ahora `_remove_redacted_annotations` elimina los que intersectan la región y conserva los de fuera. Pruebas nuevas con un PDF sintético de anotaciones y formularios, redacción parcial de texto y vectores. UX: zoom con `Ctrl`+rueda mediante `PdfCanvas.zoom_requested` y marca `*` en el título cuando hay cambios sin exportar. Se documenta que la redacción por región no sanea metadatos ni adjuntos. ADR-003, README bilingüe, AGENTS, PLAN y CHANGELOG actualizados. 613 pruebas rápidas y 2 lentas en verde, `ruff` y `mypy` limpios. |
 
 ## 16. Notas de entorno
 

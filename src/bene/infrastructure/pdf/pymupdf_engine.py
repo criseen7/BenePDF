@@ -205,6 +205,26 @@ def _visible_point_to_page(page: pymupdf.Page, point: tuple[float, float]) -> py
     return pymupdf.Point(x, y) * ~to_pdf * page.transformation_matrix
 
 
+def _remove_redacted_annotations(page: pymupdf.Page, rects: list[pymupdf.Rect]) -> None:
+    """Elimina anotaciones y campos de formulario que tocan la redacción.
+
+    ``Page.apply_redactions`` elimina texto, vectores e imágenes, pero no las
+    anotaciones ni los *widgets* de formulario. Si contienen información
+    sensible, deben borrarse explícitamente antes de aplicar la redacción.
+    """
+    annotations = page.annots()
+    if annotations is not None:
+        for annotation in list(annotations):
+            if any(annotation.rect.intersects(rect) for rect in rects):
+                page.delete_annot(annotation)
+
+    widgets = page.widgets()
+    if widgets is not None:
+        for widget in list(widgets):
+            if any(widget.rect.intersects(rect) for rect in rects):
+                page.delete_widget(widget)
+
+
 def _insert_stroke(page: pymupdf.Page, obj: StrokeObject) -> None:
     """Dibuja un trazo libre como vector en la página."""
     points = [_visible_point_to_page(page, point) for point in obj.points]
@@ -643,11 +663,14 @@ class PyMuPDFDocument:
 
                 redactions = [obj for obj in page_objects if isinstance(obj, RedactionObject)]
                 if redactions:
-                    for redaction in redactions:
-                        page.add_redact_annot(
-                            _visible_rect_to_page(page, redaction.rect),
-                            fill=(0, 0, 0),
-                        )
+                    redaction_rects = [
+                        _visible_rect_to_page(page, redaction.rect) for redaction in redactions
+                    ]
+                    # Las anotaciones y los campos de formulario no forman
+                    # parte del contenido que ``apply_redactions`` elimina.
+                    _remove_redacted_annotations(page, redaction_rects)
+                    for redaction_rect in redaction_rects:
+                        page.add_redact_annot(redaction_rect, fill=(0, 0, 0))
                     # Primero se elimina el contenido original; el texto y las
                     # imágenes nuevos se insertan después para permitir
                     # «redactar y escribir encima».

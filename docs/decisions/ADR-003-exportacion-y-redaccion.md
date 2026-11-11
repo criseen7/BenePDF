@@ -71,6 +71,21 @@ CropBox desplazado.
 - El rectángulo se rellena de negro para que la vista previa y el resultado
   coincidan visualmente.
 
+### Anotaciones y campos de formulario
+
+`Page.apply_redactions` elimina texto, vectores e imágenes, pero **no** borra
+las anotaciones ni los *widgets* de formulario. Si una nota o un campo contiene
+información sensible dentro de la región, seguiría presente y su valor podría
+extraerse. Antes de añadir las anotaciones de redacción, el adaptador recorre
+`page.annots()` y `page.widgets()` y elimina con `delete_annot`/`delete_widget`
+los que intersectan alguno de los rectángulos. Las anotaciones y los campos
+situados fuera de la región se conservan.
+
+Esta limpieza es por región: no se tocan los metadatos del documento ni los
+archivos adjuntos incrustados, porque no forman parte de la página y no tienen
+una relación geométrica con el rectángulo marcado. La documentación lo indica
+como limitación explícita en lugar de prometer un saneamiento completo.
+
 ### PDF cifrados
 
 La exportación de un PDF cifrado se rechaza con un `ExportError` explícito y la
@@ -88,6 +103,9 @@ cifrar sería una degradación de seguridad silenciosa, así que no se hace.
   la imagen se conserva.
 - La redacción puede afectar a objetos que se solapen total o parcialmente con
   la región; por eso se pide confirmación al marcarla y otra al exportar.
+- Las anotaciones y los campos de formulario que intersectan la región se
+  eliminan; los que quedan fuera se conservan. Los metadatos y los adjuntos no
+  se sanean con la redacción por región.
 - Los PDF cifrados no se pueden exportar en esta iteración.
 
 ## Alternativas descartadas

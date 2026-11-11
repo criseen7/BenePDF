@@ -6,9 +6,9 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QPoint, Qt
-from PySide6.QtGui import QAction, QColor, QImage, QImageWriter
-from PySide6.QtWidgets import QDialog, QFileDialog, QMessageBox
+from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QPoint, QPointF, Qt
+from PySide6.QtGui import QAction, QColor, QImage, QImageWriter, QWheelEvent
+from PySide6.QtWidgets import QApplication, QDialog, QFileDialog, QMessageBox
 from pytestqt.qtbot import QtBot
 
 from bene.application.ports.pdf_engine import OpenedDocument
@@ -64,6 +64,21 @@ def open_ready(
         timeout=TIMEOUT_MS,
     )
     return path
+
+
+def send_ctrl_wheel(window: MainWindow, delta: int) -> None:
+    canvas = window.canvas
+    event = QWheelEvent(
+        QPointF(10, 10),
+        QPointF(canvas.mapToGlobal(QPoint(10, 10))),
+        QPoint(0, 0),
+        QPoint(0, delta),
+        Qt.MouseButton.NoButton,
+        Qt.KeyboardModifier.ControlModifier,
+        Qt.ScrollPhase.NoScrollPhase,
+        False,
+    )
+    QApplication.sendEvent(canvas, event)
 
 
 def find_action(window: MainWindow, text: str) -> QAction:
@@ -127,6 +142,29 @@ class TestEstado:
         assert find_action(window, "Deshacer").isEnabled() is False
         assert find_action(window, "Rehacer").isEnabled() is False
         assert window.properties_panel.object is None
+
+    def test_el_titulo_marca_cambios_sin_exportar(self, qtbot: QtBot, tmp_path: Path) -> None:
+        window = build_window(qtbot, FakePdfEngine(make_pages(1)))
+        open_ready(qtbot, window, tmp_path)
+
+        assert not window.windowTitle().endswith("*")
+
+        assert window.add_text_object(PdfRect(10, 20, 210, 80), "Hola") is not None
+        assert window.windowTitle().endswith("*")
+
+        assert window.undo() is True
+        assert not window.windowTitle().endswith("*")
+
+    def test_ctrl_rueda_cambia_el_zoom(self, qtbot: QtBot, tmp_path: Path) -> None:
+        window = build_window(qtbot, FakePdfEngine(make_pages(1)))
+        open_ready(qtbot, window, tmp_path)
+        initial = window.current_scale
+
+        send_ctrl_wheel(window, 120)
+        assert window.current_scale > initial
+
+        send_ctrl_wheel(window, -120)
+        assert window.current_scale < initial
 
     def test_al_cerrar_se_libera_la_sesion(self, qtbot: QtBot, tmp_path: Path) -> None:
         window = build_window(qtbot, FakePdfEngine(make_pages(1)))

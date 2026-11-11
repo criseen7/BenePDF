@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 from PySide6.QtCore import QBuffer, QByteArray, QEvent, QIODevice, QPoint, QPointF, Qt
-from PySide6.QtGui import QColor, QImage, QImageWriter, QMouseEvent
+from PySide6.QtGui import QColor, QImage, QImageWriter, QMouseEvent, QWheelEvent
 from PySide6.QtWidgets import QApplication
 from pytestqt.qtbot import QtBot
 
@@ -54,6 +54,25 @@ def send_mouse_move(
         Qt.MouseButton.NoButton,
         Qt.MouseButton.LeftButton,
         modifiers,
+    )
+    QApplication.sendEvent(widget, event)
+
+
+def send_wheel(
+    widget: PdfCanvas,
+    delta: int,
+    modifiers: Qt.KeyboardModifier = Qt.KeyboardModifier.NoModifier,
+) -> None:
+    """Envía un evento de rueda con modificadores y un desplazamiento vertical."""
+    event = QWheelEvent(
+        QPointF(10, 10),
+        QPointF(widget.mapToGlobal(QPoint(10, 10))),
+        QPoint(0, 0),
+        QPoint(0, delta),
+        Qt.MouseButton.NoButton,
+        modifiers,
+        Qt.ScrollPhase.NoScrollPhase,
+        False,
     )
     QApplication.sendEvent(widget, event)
 
@@ -466,6 +485,35 @@ class TestTransformaciones:
         qtbot.mouseRelease(canvas, Qt.MouseButton.LeftButton, pos=QPoint(170, 90))
 
         assert requests == [("imagen-1", PdfRect(70, 10, 170, 90))]
+
+
+class TestZoomConRueda:
+    def test_ctrl_rueda_arriba_solicita_acercar(self, qtbot: QtBot) -> None:
+        canvas = make_canvas(qtbot)
+        requests: list[int] = []
+        canvas.zoom_requested.connect(requests.append)
+
+        send_wheel(canvas, 120, Qt.KeyboardModifier.ControlModifier)
+
+        assert requests == [1]
+
+    def test_ctrl_rueda_abajo_solicita_alejar(self, qtbot: QtBot) -> None:
+        canvas = make_canvas(qtbot)
+        requests: list[int] = []
+        canvas.zoom_requested.connect(requests.append)
+
+        send_wheel(canvas, -120, Qt.KeyboardModifier.ControlModifier)
+
+        assert requests == [-1]
+
+    def test_rueda_sin_ctrl_no_cambia_el_zoom(self, qtbot: QtBot) -> None:
+        canvas = make_canvas(qtbot)
+        requests: list[int] = []
+        canvas.zoom_requested.connect(requests.append)
+
+        send_wheel(canvas, 120)
+
+        assert requests == []
 
 
 class TestPintura:

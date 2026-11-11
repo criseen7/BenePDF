@@ -22,6 +22,7 @@ from PySide6.QtGui import (
     QPaintEvent,
     QPen,
     QPolygonF,
+    QWheelEvent,
 )
 from PySide6.QtWidgets import QWidget
 
@@ -106,6 +107,7 @@ class PdfCanvas(QWidget):
     transform_requested = Signal(str, object)  # (object_id, PdfRect)
     placement_requested = Signal(float, float)  # (page_x, page_y)
     stroke_requested = Signal(object, object)  # (puntos visibles, StrokeStyle)
+    zoom_requested = Signal(int)  # 1 acercar, -1 alejar
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -456,6 +458,20 @@ class PdfCanvas(QWidget):
             )
 
     # --------------------------------------------------------------- eventos
+
+    def wheelEvent(self, event: QWheelEvent) -> None:
+        """Acerca o aleja con Ctrl+rueda; sin Ctrl, conserva el desplazamiento."""
+        if not event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            super().wheelEvent(event)
+            return
+
+        delta = event.angleDelta().y()
+        if delta == 0:
+            event.ignore()
+            return
+
+        self.zoom_requested.emit(1 if delta > 0 else -1)
+        event.accept()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         if event.button() != Qt.MouseButton.LeftButton or self._mapper is None:

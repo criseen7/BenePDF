@@ -154,6 +154,58 @@ class TestExportacion:
         assert "Contrato de prueba" not in exported
         assert "Texto nativo seleccionable" in exported
 
+    def test_la_redaccion_elimina_anotaciones_y_campos_que_intersectan(
+        self, engine: PyMuPDFEngine, tmp_path: Path
+    ) -> None:
+        source = synthetic.make_annotation_form_pdf(tmp_path / "anotado.pdf")
+        destination = tmp_path / "anotado-redactado.pdf"
+        redaction = RedactionObject("redaccion-1", 0, PdfRect(50, 50, 380, 260))
+
+        export(engine, source, destination, (redaction,))
+
+        exported = text_of(destination)
+        assert "Texto sensible" not in exported
+        assert "Valor sensible" not in exported
+        assert "Texto visible" in exported
+        with pymupdf.open(destination) as document:
+            page = document[0]
+            annotations = list(page.annots()) if page.annots() is not None else []
+            widgets = list(page.widgets()) if page.widgets() is not None else []
+            assert len(annotations) == 1
+            assert annotations[0].rect.y0 > 500
+            assert [widget.field_name for widget in widgets] == ["campo_fuera"]
+
+    def test_la_redaccion_elimina_el_texto_parcialmente_intersectado(
+        self, engine: PyMuPDFEngine, tmp_path: Path
+    ) -> None:
+        source = synthetic.make_text_pdf(tmp_path / "original.pdf")
+        destination = tmp_path / "parcial.pdf"
+        redaction = RedactionObject("redaccion-1", 0, PdfRect(60, 80, 120, 120))
+
+        export(engine, source, destination, (redaction,))
+
+        exported = text_of(destination)
+        assert "Contrato" not in exported
+        assert "prueba" in exported
+
+    def test_la_redaccion_elimina_los_vectores_que_intersectan(
+        self, engine: PyMuPDFEngine, tmp_path: Path
+    ) -> None:
+        source = synthetic.make_graphic_pdf(tmp_path / "grafico.pdf")
+        destination = tmp_path / "grafico-redactado.pdf"
+        redaction = RedactionObject("redaccion-1", 0, PdfRect(80, 80, 420, 320))
+
+        export(engine, source, destination, (redaction,))
+
+        with pymupdf.open(destination) as document:
+            page = document[0]
+            pixmap = page.get_pixmap(alpha=False)
+            assert pixmap.pixel(200, 200) == (0, 0, 0)
+            # La línea queda fuera de la redacción y se conserva (con su
+            # suavizado de bordes); el relleno de la redacción es negro.
+            line = pixmap.pixel(200, 400)
+            assert max(line) < 200
+
     def test_redactar_y_escribir_texto_nuevo(self, engine: PyMuPDFEngine, tmp_path: Path) -> None:
         source = synthetic.make_text_pdf(tmp_path / "original.pdf")
         destination = tmp_path / "reemplazado.pdf"

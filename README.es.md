@@ -4,11 +4,13 @@
 
 Aplicación de escritorio para visualizar, organizar y editar documentos PDF sin subir nada a servicios externos.
 
-El proyecto está en fase de construcción. Las iteraciones 1 a 3 cubren la apertura, la visualización, la navegación, el zoom, la rotación de vista, las miniaturas, la edición en memoria de texto e imágenes, la redacción permanente y la exportación segura a un archivo nuevo. La iteración 4 corrige el redimensionado y la exportación en páginas rotadas o recortadas, embebe las fuentes y avisa del texto que no cabe. La iteración 5 añade errores de exportación accionables, accesibilidad por teclado, pruebas con documentos de 100 páginas, empaquetado con PyInstaller e integración continua. La iteración 6 añade búsqueda de texto, información del documento, rotación/reordenación/eliminación/extracción de páginas y reemplazo de imágenes incrustadas. La iteración 7 añade dibujo libre con color y grosor configurables, con trazos vectoriales que se pueden seleccionar y redimensionar.
+El proyecto está en fase de construcción. Las iteraciones 1 a 3 cubren la apertura, la visualización, la navegación, el zoom, la rotación de vista, las miniaturas, la edición en memoria de texto e imágenes, la redacción permanente y la exportación segura a un archivo nuevo. La iteración 4 corrige el redimensionado y la exportación en páginas rotadas o recortadas, embebe las fuentes y avisa del texto que no cabe. La iteración 5 añade errores de exportación accionables, accesibilidad por teclado, pruebas con documentos de 100 páginas, empaquetado con PyInstaller e integración continua. La iteración 6 añade búsqueda de texto, información del documento, rotación/reordenación/eliminación/extracción de páginas y reemplazo de imágenes incrustadas. La iteración 7 añade dibujo libre con color y grosor configurables, con trazos vectoriales que se pueden seleccionar y redimensionar. La revisión de integridad de la hoja de ruta elimina además las anotaciones y los campos de formulario que intersectan una redacción, y añade el zoom con `Ctrl`+rueda y el aviso de cambios sin exportar en el título de la ventana.
 
 - Requisitos y criterios de aceptación: [docs/requirements.md](docs/requirements.md)
-- Plan de trabajo y estado: [PLAN.md](PLAN.md)
+- Hoja de ruta principal: [BenePDF_Plan_Mejoras_Evolucion_Correcciones.md](BenePDF_Plan_Mejoras_Evolucion_Correcciones.md)
+- Plan de trabajo, estado y bitácora de iteraciones: [PLAN.md](PLAN.md)
 - Decisiones de arquitectura: [docs/decisions/](docs/decisions/)
+- Cambios por versión: [CHANGELOG.md](CHANGELOG.md)
 
 ## Requisitos
 
@@ -97,7 +99,7 @@ Los cambios se guardan **solo en memoria** durante la sesión: el PDF original n
 7. **Eliminar** (`Supr`): borra el objeto seleccionado.
 8. **Deshacer / Rehacer** (`Ctrl+Z` / `Ctrl+Y`): recorre el historial completo de la sesión, incluidas las redacciones, los trazos y las operaciones de página.
 
-La barra de estado muestra **Cambios sin exportar** cuando hay ediciones activas. Al cerrar el documento, abrir otro PDF o salir, la aplicación ofrece **Guardar**, **Descartar** o **Cancelar**.
+La barra de estado muestra **Cambios sin exportar** cuando hay ediciones activas, y el título de la ventana se marca con `*`. Al cerrar el documento, abrir otro PDF o salir, la aplicación ofrece **Guardar**, **Descartar** o **Cancelar**.
 
 ### Exportar el resultado
 
@@ -107,7 +109,7 @@ La barra de estado muestra **Cambios sin exportar** cuando hay ediciones activas
 4. Bene PDF aplica las redacciones, inserta el texto, las imágenes y los trazos nuevos, añade la rotación de página y, por último, reordena y elimina las páginas según la copia de trabajo.
 5. Bene PDF escribe primero en un archivo temporal, lo reabre para validarlo y solo entonces reemplaza el destino. Si algo falla, el archivo original y el destino anterior quedan intactos; el aviso de error lo indica de forma explícita.
 
-El archivo exportado puede abrirse de nuevo y contiene el texto, las imágenes, los trazos, las redacciones, los reemplazos de imagen y la disposición de páginas aplicadas. La redacción elimina el texto subyacente (no solo lo tapa) y, en páginas escaneadas, borra únicamente los píxeles de la región marcada.
+El archivo exportado puede abrirse de nuevo y contiene el texto, las imágenes, los trazos, las redacciones, los reemplazos de imagen y la disposición de páginas aplicadas. La redacción elimina el texto subyacente (no solo lo tapa); en páginas escaneadas borra únicamente los píxeles de la región marcada, y elimina las anotaciones y los campos de formulario cuya área intersecta la redacción. Los metadatos del documento y los archivos adjuntos incrustados quedan fuera de la región de redacción y no se sanean.
 
 Para guardar solo algunas páginas, usa **Página → Extraer páginas…**; la extracción crea un archivo nuevo y no cambia la sesión de trabajo.
 
@@ -115,7 +117,7 @@ Los PDF cifrados no se pueden exportar en esta iteración: PyMuPDF necesitaría 
 
 ### Zoom y ajuste
 
-- **Acercar** / **Alejar**: botones de la barra o `Ctrl++` / `Ctrl+-`.
+- **Acercar** / **Alejar**: botones de la barra, `Ctrl++` / `Ctrl+-` o `Ctrl`+rueda del ratón sobre la página.
 - **100 %**: `Ctrl+0`.
 - **Ajustar ancho**: `Ctrl+1`.
 - **Ajustar página**: `Ctrl+2`.
@@ -231,6 +233,7 @@ También se puede generar un único archivo con `--onefile`, aunque tarda más e
 - Un trazo es contenido vectorial nuevo; tapa el texto, pero no lo elimina. Para borrarlo de forma permanente hay que usar la redacción.
 - El grosor de un trazo queda fijado al crearlo; redimensionarlo cambia su forma, no el ancho de línea.
 - La redacción puede afectar a objetos que se solapen con la región marcada; revísala antes de exportar.
+- La redacción elimina el contenido, las anotaciones y los campos de formulario que intersectan la región, pero no limpia los metadatos del documento ni los archivos adjuntos incrustados.
 - Si una página concreta no se puede renderizar, se muestra un aviso y el detalle queda en el registro.
 - La interfaz se ha verificado en modo offscreen sobre Windows (y en CI sobre Ubuntu); falta una revisión visual con pantalla real, DPI y lector de pantalla antes de una versión distribuible.
 - Linux se prueba en CI en modo offscreen, pero no se ha validado visualmente.

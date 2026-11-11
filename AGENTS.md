@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Guía para sesiones de OpenCode en este repositorio. El producto, la interfaz, `PLAN.md`, los ADR y los mensajes de commit están en español; `README.md` es la guía principal en inglés y `README.es.md` la versión española.
+Guía para sesiones de OpenCode en este repositorio. El producto, la interfaz, `PLAN.md`, los ADR y los mensajes de commit están en español; `README.md` es la guía principal en inglés y `README.es.md` la versión española. `BenePDF_Plan_Mejoras_Evolucion_Correcciones.md` es la hoja de ruta principal de prioridades; `PLAN.md` registra la ejecución y las iteraciones.
 
 ## Comandos
 
@@ -35,7 +35,8 @@ Instalación: `python -m pip install -e ".[dev]"`. Build: instala el extra `buil
 - Los puntos de `StrokeObject` están en coordenadas **visibles** de la página; `rect` se calcula con la caja de los puntos ampliada por `width / 2` y no se almacena. Mover desplaza los puntos y redimensionar los escala, pero el grosor se conserva (ADR-007).
 - Orden de exportación: redacciones/ediciones (textos, imágenes y trazos) → rotación adicional → `document.select(order)`. No reordenes estos pasos.
 - `page.rect` ya aplica `/Rotate`. `PageInfo` guarda dimensiones sin rotar y `rotated_size` aplica la rotación. Las coordenadas de `search_for` y `get_image_info` son sin rotar y se convierten con `rect * page.rotation_matrix`.
-- La redacción debe eliminar el contenido subyacente (hay pruebas de no extracción) y pedir confirmación; no la conviertas en una caja negra.
+- La redacción debe eliminar el contenido subyacente (hay pruebas de no extracción) y pedir confirmación; no la conviertas en una caja negra. `Page.apply_redactions` no borra anotaciones ni *widgets*: `_remove_redacted_annotations` los elimina solo si intersectan la región. Los metadatos y los adjuntos no se sanean por región.
+- El zoom con `Ctrl`+rueda se comunica con la señal `PdfCanvas.zoom_requested`; la ventana decide el nivel. El título de `MainWindow` añade `*` cuando `is_dirty`.
 - Nunca registres el texto del documento ni contraseñas. El registro rota a 2 MB y conserva tres copias.
 
 ## Pruebas y UI
@@ -48,4 +49,4 @@ Instalación: `python -m pip install -e ".[dev]"`. Build: instala el extra `buil
 
 ## Documentación
 
-`README.md`, `README.es.md`, `PLAN.md` y `docs/decisions/ADR-*.md` son las fuentes de contexto. Actualiza `PLAN.md` (estado y bitácora) y el ADR correspondiente cuando cambies decisiones o comportamiento.
+`README.md`, `README.es.md`, `PLAN.md`, `CHANGELOG.md`, `BenePDF_Plan_Mejoras_Evolucion_Correcciones.md` y `docs/decisions/ADR-*.md` son las fuentes de contexto. La hoja de ruta marca prioridades; no la conviertas en un registro de cambios. Actualiza `PLAN.md` (estado y bitácora), `CHANGELOG.md` cuando el cambio sea visible y el ADR correspondiente cuando cambies decisiones o comportamiento.
