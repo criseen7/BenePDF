@@ -18,6 +18,7 @@ from bene.domain.editing import (
     ImageObject,
     ImageReplacementObject,
     RedactionObject,
+    StrokeObject,
     TextObject,
 )
 from bene.domain.errors import ExportError
@@ -34,10 +35,17 @@ class ExportResult:
     text_count: int
     image_count: int
     replacement_count: int = 0
+    stroke_count: int = 0
 
     @property
     def total_objects(self) -> int:
-        return self.redaction_count + self.text_count + self.image_count + self.replacement_count
+        return (
+            self.redaction_count
+            + self.text_count
+            + self.image_count
+            + self.replacement_count
+            + self.stroke_count
+        )
 
 
 class ExportDocument:
@@ -67,6 +75,7 @@ class ExportDocument:
             text_count=sum(isinstance(obj, TextObject) for obj in exported),
             image_count=sum(isinstance(obj, ImageObject) for obj in exported),
             replacement_count=sum(isinstance(obj, ImageReplacementObject) for obj in exported),
+            stroke_count=sum(isinstance(obj, StrokeObject) for obj in exported),
         )
 
     @staticmethod

@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from bene.application.use_cases.export_document import ExportDocument
-from bene.domain.editing import ImageObject, RedactionObject, TextObject
+from bene.domain.editing import ImageObject, RedactionObject, StrokeObject, TextObject
 from bene.domain.errors import ExportError
 from bene.domain.models import DocumentInfo, PdfRect
 from bene.domain.pages import PageArrangement
@@ -44,6 +44,35 @@ def test_exporta_y_resume_los_objetos(tmp_path: Path) -> None:
     assert result.total_objects == 3
     assert destination.read_bytes() == b"%PDF-1.7 exportacion falsa"
     assert document.export_calls == [(destination, objects)]
+
+
+def test_el_resumen_cuenta_los_trazos(tmp_path: Path) -> None:
+    source = tmp_path / "original.pdf"
+    source.write_bytes(b"%PDF-1.7 original")
+    document = make_document(source)
+    stroke = StrokeObject("trazo-1", 0, ((10.0, 10.0), (20.0, 20.0)))
+
+    result = ExportDocument()(document, tmp_path / "copia.pdf", objects=(stroke,))
+
+    assert result.stroke_count == 1
+    assert result.total_objects == 1
+
+
+def test_el_resumen_omite_los_trazos_de_paginas_eliminadas(tmp_path: Path) -> None:
+    source = tmp_path / "original.pdf"
+    source.write_bytes(b"%PDF-1.7 original")
+    document = make_document(source)
+    stroke = StrokeObject("trazo-1", 2, ((10.0, 10.0), (20.0, 20.0)))
+
+    result = ExportDocument()(
+        document,
+        tmp_path / "copia.pdf",
+        objects=(stroke,),
+        arrangement=PageArrangement(3, order=(0,)),
+    )
+
+    assert result.stroke_count == 0
+    assert result.total_objects == 0
 
 
 def test_el_resumen_omite_los_objetos_de_paginas_eliminadas(tmp_path: Path) -> None:

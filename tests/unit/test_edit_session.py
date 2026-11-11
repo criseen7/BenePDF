@@ -7,7 +7,14 @@ from pathlib import Path
 import pytest
 
 from bene.application.use_cases.edit_session import EditSession
-from bene.domain.editing import ImageObject, RedactionObject, TextObject, TextStyle
+from bene.domain.editing import (
+    ImageObject,
+    RedactionObject,
+    StrokeObject,
+    StrokeStyle,
+    TextObject,
+    TextStyle,
+)
 from bene.domain.errors import EditObjectNotFoundError
 from bene.domain.models import PdfRect
 
@@ -32,6 +39,25 @@ class TestAnadir:
         assert obj.style == style
         assert session.objects == (obj,)
         assert session.is_dirty is True
+
+    def test_anade_trazo_con_estilo(self, session: EditSession) -> None:
+        points = ((10.0, 20.0), (30.0, 40.0), (50.0, 20.0))
+        style = StrokeStyle(color="#00ff00", width=5.5)
+
+        obj = session.add_stroke(0, points, style)
+
+        assert isinstance(obj, StrokeObject)
+        assert obj.object_id == "trazo-1"
+        assert obj.page_index == 0
+        assert obj.points == points
+        assert obj.style == style
+        assert session.objects == (obj,)
+        assert session.is_dirty is True
+
+    def test_anade_trazo_con_estilo_por_defecto(self, session: EditSession) -> None:
+        obj = session.add_stroke(0, [(1.0, 2.0)])
+
+        assert obj.style == StrokeStyle()
 
     def test_anade_imagen(self, session: EditSession) -> None:
         obj = session.add_image(
@@ -98,6 +124,19 @@ class TestTransformar:
         assert current.rect == resized
         assert session.can_undo is True
 
+    def test_mueve_y_redimensiona_un_trazo(self, session: EditSession) -> None:
+        obj = session.add_stroke(0, [(10.0, 20.0), (50.0, 40.0)], StrokeStyle(width=2.0))
+
+        session.move_object(obj.object_id, PdfRect(19, 24, 61, 46))
+        moved = session.object(obj.object_id)
+        assert isinstance(moved, StrokeObject)
+        assert moved.points == ((20.0, 25.0), (60.0, 45.0))
+
+        session.resize_object(obj.object_id, PdfRect(0, 0, 82, 42))
+        resized = session.object(obj.object_id)
+        assert isinstance(resized, StrokeObject)
+        assert resized.points == ((1.0, 1.0), (81.0, 41.0))
+
     def test_no_permite_transformar_un_objeto_inexistente(self, session: EditSession) -> None:
         with pytest.raises(EditObjectNotFoundError):
             session.move_object("fantasma", PdfRect(0, 0, 10, 10))
@@ -137,6 +176,15 @@ class TestHistorial:
         assert isinstance(current, TextObject)
         assert current.rect == PdfRect(50, 60, 150, 100)
         assert session.redo() is False
+
+    def test_deshacer_y_rehacer_un_trazo(self, session: EditSession) -> None:
+        obj = session.add_stroke(0, [(10.0, 20.0), (30.0, 40.0)])
+
+        assert session.undo() is True
+        assert len(session.objects) == 0
+        assert session.redo() is True
+        assert len(session.objects) == 1
+        assert session.object(obj.object_id) == obj
 
     def test_una_accion_nueva_descarta_el_futuro(self, session: EditSession) -> None:
         first = session.add_text(0, PdfRect(0, 0, 100, 40), "Uno")

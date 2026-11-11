@@ -7,6 +7,7 @@ regiones, selecciones y transformaciones que el usuario solicita.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Iterable
 from enum import StrEnum
 from typing import Final
@@ -20,6 +21,7 @@ from PySide6.QtGui import (
     QPainter,
     QPaintEvent,
     QPen,
+    QPolygonF,
 )
 from PySide6.QtWidgets import QWidget
 
@@ -29,6 +31,8 @@ from bene.domain.editing import (
     ImageObject,
     ImageReplacementObject,
     RedactionObject,
+    StrokeObject,
+    StrokeStyle,
     TextAlignment,
     TextObject,
 )
@@ -56,6 +60,9 @@ HANDLE_SIZE: Final[int] = 10
 HANDLE_HIT_RADIUS: Final[float] = 7.0
 MIN_OBJECT_SIZE: Final[float] = 4.0
 MIN_REGION_PIXELS: Final[float] = 3.0
+# Puntos de pantalla que hay que separar dos muestras del trazo para no
+# acumular coordenadas casi idénticas.
+MIN_DRAW_DISTANCE: Final[float] = 1.5
 
 
 def rendered_page_to_image(render: RenderedPage, *, pixel_ratio: float = 1.0) -> QImage:
@@ -87,6 +94,7 @@ class CanvasTool(StrEnum):
     REGION = "region"
     REDACT = "redact"
     PLACE = "place"
+    DRAW = "draw"
 
 
 class PdfCanvas(QWidget):
@@ -97,6 +105,7 @@ class PdfCanvas(QWidget):
     selection_changed = Signal(object)  # str | None
     transform_requested = Signal(str, object)  # (object_id, PdfRect)
     placement_requested = Signal(float, float)  # (page_x, page_y)
+    stroke_requested = Signal(object, object)  # (puntos visibles, StrokeStyle)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -112,6 +121,8 @@ class PdfCanvas(QWidget):
         self._overflow_ids: set[str] = set()
         self._search_rects: tuple[PdfRect, ...] = ()
         self._search_current: PdfRect | None = None
+        self._stroke_style = StrokeStyle()
+        self._draw_points: list[tuple[float, float]] = []
 
         self._drag_mode: str | None = None
         self._drag_origin = QPointF()
@@ -174,6 +185,10 @@ class PdfCanvas(QWidget):
     def current_search_highlight(self) -> PdfRect | None:
         return self._search_current
 
+    @property
+    def stroke_style(self) -> StrokeStyle:
+        return self._stroke_style
+
     # ---------------------------------------------------------------- estado
 
     def set_image(self, image: QImage | None) -> None:
@@ -216,11 +231,18 @@ class PdfCanvas(QWidget):
         self.update()
 
     def set_tool(self, tool: CanvasTool) -> None:
+        if tool is not CanvasTool.DRAW:
+            self._draw_points = []
         self._tool = tool
         if tool is CanvasTool.SELECT:
             self.unsetCursor()
         else:
             self.setCursor(Qt.CursorShape.CrossCursor)
+        self.update()
+
+    def set_stroke_style(self, style: StrokeStyle) -> None:
+        """Fija el color y grosor con los que se dibujarán los trazos nuevos."""
+        self._stroke_style = style
         self.update()
 
     def set_overflow_ids(self, object_ids: Iterable[str]) -> None:
@@ -286,6 +308,7 @@ class PdfCanvas(QWidget):
 
         for obj in self._objects:
             self._paint_object(painter, obj)
+        self._paint_draw_preview(painter)
         self._paint_search(painter)
         self._paint_region(painter)
         self._paint_selection(painter)
@@ -316,6 +339,8 @@ class PdfCanvas(QWidget):
                 painter.setBrush(Qt.BrushStyle.NoBrush)
                 painter.setPen(QPen(OVERFLOW_COLOR, 1, Qt.PenStyle.DashLine))
                 painter.drawRect(view_rect)
+        elif isinstance(obj, StrokeObject):
+            self._paint_stroke(painter, obj.points, obj.style)
         elif isinstance(obj, ImageObject):
             image = self._image_for(obj)
             if image.isNull():
@@ -339,6 +364,38 @@ class PdfCanvas(QWidget):
             painter.drawRect(view_rect)
         elif isinstance(obj, RedactionObject):
             self._paint_redaction(painter, view_rect)
+
+    def _paint_stroke(
+        self,
+        painter: QPainter,
+        points: tuple[tuple[float, float], ...],
+        style: StrokeStyle,
+    ) -> None:
+        mapper = self._mapper
+        if mapper is None or not points:
+            return
+        color = QColor(style.color)
+        width = max(1.0, style.width * mapper.scale)
+        if len(points) == 1:
+            x, y = mapper.to_view(*points[0])
+            radius = width / 2.0
+            painter.setBrush(color)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawEllipse(QPointF(x, y), radius, radius)
+            return
+
+        pen = QPen(color, width)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        polygon = QPolygonF([QPointF(*mapper.to_view(x, y)) for x, y in points])
+        painter.drawPolyline(polygon)
+
+    def _paint_draw_preview(self, painter: QPainter) -> None:
+        if self._drag_mode != "draw" or not self._draw_points:
+            return
+        self._paint_stroke(painter, tuple(self._draw_points), self._stroke_style)
 
     @staticmethod
     def _paint_redaction(painter: QPainter, view_rect: QRectF) -> None:
@@ -417,6 +474,12 @@ class PdfCanvas(QWidget):
             self.placement_requested.emit(page_x, page_y)
             return
 
+        if self._tool is CanvasTool.DRAW:
+            self._drag_mode = "draw"
+            self._draw_points = []
+            self._append_draw_point(position)
+            return
+
         target = self._handle_at(position)
         if target is not None:
             obj = self._selected_object()
@@ -455,6 +518,10 @@ class PdfCanvas(QWidget):
             self.update()
             return
 
+        if self._drag_mode == "draw":
+            self._append_draw_point(position)
+            return
+
         if self._drag_mode == "move" and self._drag_original_rect is not None:
             current = self._mapper.to_page(position.x(), position.y())
             dx = current[0] - self._drag_start_page[0]
@@ -486,6 +553,8 @@ class PdfCanvas(QWidget):
             self._finish_region()
         elif self._drag_mode in ("move", "resize"):
             self._finish_transform()
+        elif self._drag_mode == "draw":
+            self._finish_draw()
 
         self._drag_mode = None
         self._resize_corner = None
@@ -513,6 +582,29 @@ class PdfCanvas(QWidget):
             else:
                 self.region_selected.emit(self._region)
         self._region_view = None
+
+    def _append_draw_point(self, position: QPointF) -> None:
+        """Añade una muestra del trazo si está lo bastante lejos de la anterior."""
+        if self._mapper is None:
+            return
+        page_point = self._mapper.to_page_clamped(position.x(), position.y())
+        if self._draw_points:
+            last_x, last_y = self._draw_points[-1]
+            distance = math.hypot(
+                (page_point[0] - last_x) * self._mapper.scale,
+                (page_point[1] - last_y) * self._mapper.scale,
+            )
+            if distance < MIN_DRAW_DISTANCE:
+                return
+        self._draw_points.append(page_point)
+        self.update()
+
+    def _finish_draw(self) -> None:
+        points = tuple(self._draw_points)
+        self._draw_points = []
+        if not points:
+            return
+        self.stroke_requested.emit(points, self._stroke_style)
 
     def _finish_transform(self) -> None:
         if (

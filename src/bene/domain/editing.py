@@ -1,4 +1,4 @@
-"""Modelos y comandos inmutables de edición (ADR-002, RF-007 a RF-014).
+"""Modelos y comandos inmutables de edición (ADR-002, RF-007 a RF-014, RF-026).
 
 Las coordenadas son puntos PDF en el espacio visible de la página, con origen
 arriba-izquierda. El documento original nunca se modifica: los comandos se
@@ -64,6 +64,20 @@ class TextStyle:
         object.__setattr__(self, "alignment", TextAlignment(self.alignment))
 
 
+@dataclass(frozen=True, slots=True)
+class StrokeStyle:
+    """Color y grosor de un trazo libre."""
+
+    color: str = "#000000"
+    width: float = 2.0
+
+    def __post_init__(self) -> None:
+        if not _HEX_COLOR.match(self.color):
+            raise ValueError(f"Color no válido: {self.color!r}; se espera #rrggbb")
+        if not math.isfinite(self.width) or self.width <= 0:
+            raise ValueError(f"Grosor de trazo inválido: {self.width}")
+
+
 def _validate_identity(object_id: str, page_index: int, rect: PdfRect) -> None:
     if not object_id.strip():
         raise ValueError("El identificador del objeto no puede estar vacío")
@@ -87,6 +101,50 @@ class TextObject:
         _validate_identity(self.object_id, self.page_index, self.rect)
         if not self.text.strip():
             raise ValueError("El texto no puede estar vacío")
+
+
+@dataclass(frozen=True, slots=True)
+class StrokeObject:
+    """Trazo libre dibujado sobre una página (RF-026).
+
+    Los puntos están en coordenadas visibles de la página, con origen
+    arriba-izquierda. El rectángulo se calcula a partir de la caja de los puntos
+    y del grosor, de modo que un punto aislado o una línea recta también se
+    puedan seleccionar.
+    """
+
+    object_id: str
+    page_index: int
+    points: tuple[tuple[float, float], ...]
+    style: StrokeStyle = field(default_factory=StrokeStyle)
+
+    def __post_init__(self) -> None:
+        if not self.points:
+            raise ValueError("El trazo debe tener al menos un punto")
+        normalized: list[tuple[float, float]] = []
+        for point in self.points:
+            try:
+                x, y = point
+            except (TypeError, ValueError):
+                raise ValueError(f"Punto de trazo inválido: {point!r}") from None
+            if not math.isfinite(x) or not math.isfinite(y):
+                raise ValueError(f"Las coordenadas del trazo deben ser finitas: {point!r}")
+            normalized.append((float(x), float(y)))
+        object.__setattr__(self, "points", tuple(normalized))
+        _validate_identity(self.object_id, self.page_index, self.rect)
+
+    @property
+    def rect(self) -> PdfRect:
+        """Caja visible que ocupa el trazo, incluido su grosor."""
+        xs = [x for x, _ in self.points]
+        ys = [y for _, y in self.points]
+        padding = self.style.width / 2.0
+        return PdfRect(
+            min(xs) - padding,
+            min(ys) - padding,
+            max(xs) + padding,
+            max(ys) + padding,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,7 +209,7 @@ class RedactionObject:
         _validate_identity(self.object_id, self.page_index, self.rect)
 
 
-EditObject = TextObject | ImageObject | ImageReplacementObject | RedactionObject
+EditObject = TextObject | StrokeObject | ImageObject | ImageReplacementObject | RedactionObject
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,6 +224,13 @@ class AddImageCommand:
     """Añade una imagen."""
 
     image_object: ImageObject
+
+
+@dataclass(frozen=True, slots=True)
+class AddStrokeCommand:
+    """Añade un trazo libre."""
+
+    stroke_object: StrokeObject
 
 
 @dataclass(frozen=True, slots=True)
@@ -268,6 +333,7 @@ def _validate_transform(object_id: str, page_index: int, rect: PdfRect) -> None:
 
 ObjectCommand = (
     AddTextCommand
+    | AddStrokeCommand
     | AddImageCommand
     | AddRedactionCommand
     | AddImageReplacementCommand
@@ -295,6 +361,8 @@ def apply_command(
 
     if isinstance(command, AddTextCommand):
         _add(updated, command.text_object)
+    elif isinstance(command, AddStrokeCommand):
+        _add(updated, command.stroke_object)
     elif isinstance(command, AddImageCommand):
         _add(updated, command.image_object)
     elif isinstance(command, AddRedactionCommand):
@@ -308,7 +376,14 @@ def apply_command(
                 f"El objeto {command.object_id!r} pertenece a la página "
                 f"{current.page_index + 1}, no a la {command.page_index + 1}"
             )
-        updated[command.object_id] = replace(current, rect=command.rect)
+        if isinstance(current, StrokeObject):
+            updated[command.object_id] = _transform_stroke(
+                current,
+                command.rect,
+                resize=isinstance(command, ResizeObjectCommand),
+            )
+        else:
+            updated[command.object_id] = replace(current, rect=command.rect)
     elif isinstance(command, DeleteObjectCommand):
         current = _require(updated, command.object_id)
         if current.page_index != command.page_index:
@@ -319,6 +394,42 @@ def apply_command(
         del updated[command.object_id]
 
     return updated
+
+
+def _transform_stroke(obj: StrokeObject, target: PdfRect, *, resize: bool) -> StrokeObject:
+    """Mueve o redimensiona un trazo transformando sus puntos."""
+    current = obj.rect
+    if not resize:
+        dx = target.x0 - current.x0
+        dy = target.y0 - current.y0
+        points = tuple((x + dx, y + dy) for x, y in obj.points)
+        return replace(obj, points=points)
+
+    padding = obj.style.width / 2.0
+    old_inner = _inset_rect(current, padding)
+    new_inner = _inset_rect(target, padding)
+    scale_x = new_inner.width / old_inner.width if old_inner.width > 0 else 1.0
+    scale_y = new_inner.height / old_inner.height if old_inner.height > 0 else 1.0
+    points = tuple(
+        (
+            new_inner.x0 + (x - old_inner.x0) * scale_x,
+            new_inner.y0 + (y - old_inner.y0) * scale_y,
+        )
+        for x, y in obj.points
+    )
+    return replace(obj, points=points)
+
+
+def _inset_rect(rect: PdfRect, amount: float) -> PdfRect:
+    """Reduce un rectángulo sin cruzar su centro."""
+    horizontal = min(amount, rect.width / 2.0)
+    vertical = min(amount, rect.height / 2.0)
+    return PdfRect(
+        rect.x0 + horizontal,
+        rect.y0 + vertical,
+        rect.x1 - horizontal,
+        rect.y1 - vertical,
+    )
 
 
 def _add(objects: dict[str, EditObject], obj: EditObject) -> None:

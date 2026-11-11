@@ -4,7 +4,7 @@
 
 Desktop application to view, organize, and edit PDF documents without uploading anything to external services.
 
-The project is under construction. Iterations 1 to 3 cover opening, viewing, navigation, zoom, view rotation, thumbnails, in-memory editing of text and images, permanent redaction, and safe export to a new file. Iteration 4 fixes resizing and export on rotated or cropped pages, embeds fonts, and warns about text that does not fit. Iteration 5 adds actionable export errors, keyboard accessibility, tests with 100-page documents, PyInstaller packaging, and continuous integration. Iteration 6 adds text search, document information, page rotation/reordering/deletion/extraction, and replacement of embedded images.
+The project is under construction. Iterations 1 to 3 cover opening, viewing, navigation, zoom, view rotation, thumbnails, in-memory editing of text and images, permanent redaction, and safe export to a new file. Iteration 4 fixes resizing and export on rotated or cropped pages, embeds fonts, and warns about text that does not fit. Iteration 5 adds actionable export errors, keyboard accessibility, tests with 100-page documents, PyInstaller packaging, and continuous integration. Iteration 6 adds text search, document information, page rotation/reordering/deletion/extraction, and replacement of embedded images. Iteration 7 adds freehand drawing with configurable color and thickness, selectable and resizable vector strokes.
 
 > The application interface and the detailed project documentation are currently in Spanish. This guide translates the interface labels into English for readability; the [Spanish README](README.es.md) shows them as they appear in the application.
 
@@ -94,9 +94,10 @@ Changes are kept **only in memory** during the session: the original PDF is neve
 2. **Redact region** (`Ctrl+Shift+X`): drag over the content you want to remove. Confirmation is requested because, on export, the underlying content is permanently erased from the new file. The region is shown in black and can be moved, resized, or deleted like any other object before export.
 3. **Add text** (`Ctrl+T`): enter the content and choose the font, size, color, and alignment. If a region is selected, the text fills that region; otherwise, the tool remains active and the text is placed with a click. You can redact an area and type the corrected text over it in the same step. The Helvetica, Times-Roman, and Courier fonts are embedded in the PDF, so they preserve the euro sign, accents, and Latin alphabets; if the text does not fit its region or uses characters that the font does not support, the object is marked in red and export is blocked with a warning that indicates the page and the missing space.
 4. **Insert image** (`Ctrl+I`): supports PNG and JPEG up to 20 MB. Like text, it uses the selected region or the next click. The image keeps its original aspect ratio.
-5. **Move and resize**: with the **Select** tool (`Ctrl+Shift+V`), click an object to select it. With the object selected, drag from its body to move it or from the corner handles to resize it; the cursor changes as you approach each area. Images stretch freely; hold **Shift** while dragging a handle to preserve their aspect ratio. The **Properties** panel lets you enter X, Y, width, and height in PDF points.
-6. **Delete** (`Delete`): removes the selected object.
-7. **Undo / Redo** (`Ctrl+Z` / `Ctrl+Y`): traverses the full session history, including redactions and page operations.
+5. **Draw** (`Ctrl+Shift+D`): drag over the page to draw freehand. The **Drawing** toolbar sets the color and the thickness from 0.5 to 50 pt. The tool stays active after each stroke so you can draw several in a row; switch to **Select** or another tool to stop. Strokes are saved as vectors and can be selected, moved, resized, deleted, undone, and redone like any other object. Resizing changes the shape but keeps the thickness. Drawing over text only covers it visually: use **Redact region** to remove the underlying content permanently.
+6. **Move and resize**: with the **Select** tool (`Ctrl+Shift+V`), click an object to select it. With the object selected, drag from its body to move it or from the corner handles to resize it; the cursor changes as you approach each area. Images stretch freely; hold **Shift** while dragging a handle to preserve their aspect ratio. The **Properties** panel lets you enter X, Y, width, and height in PDF points.
+7. **Delete** (`Delete`): removes the selected object.
+8. **Undo / Redo** (`Ctrl+Z` / `Ctrl+Y`): traverses the full session history, including redactions, strokes, and page operations.
 
 The status bar shows **Unsaved changes** when there are active edits. When closing the document, opening another PDF, or quitting, the application offers **Save**, **Discard**, or **Cancel**.
 
@@ -105,10 +106,10 @@ The status bar shows **Unsaved changes** when there are active edits. When closi
 1. Click **Export as…** (`Ctrl+Shift+S`) or use File → Export as…
 2. Choose a name and folder different from the original PDF. The application refuses to save over the original and suggests `name-edited.pdf`, `name-edited-2.pdf`, … so as not to overwrite a previous export.
 3. If there are redactions, confirm that they will be applied permanently.
-4. Bene PDF applies the redactions, inserts the new text and images, adds the page rotation, and finally reorders and deletes pages according to the working copy.
+4. Bene PDF applies the redactions, inserts the new text, images, and strokes, adds the page rotation, and finally reorders and deletes pages according to the working copy.
 5. Bene PDF writes to a temporary file first, reopens it to validate it, and only then replaces the destination. If anything fails, the original file and the previous destination remain intact; the error message states this explicitly.
 
-The exported file can be opened again and contains the applied text, images, redactions, image replacements, and page layout. Redaction removes the underlying text (not just covers it) and, on scanned pages, erases only the pixels in the marked region.
+The exported file can be opened again and contains the applied text, images, strokes, redactions, image replacements, and page layout. Redaction removes the underlying text (not just covers it) and, on scanned pages, erases only the pixels in the marked region.
 
 To save only some pages, use **Page → Extract pages…**; extraction creates a new file and does not change the working session.
 
@@ -152,6 +153,7 @@ Click **Rotate view 90°** or press `Ctrl+R` to rotate the page on screen 90° c
 | Redact region | `Ctrl+Shift+X` |
 | Add text | `Ctrl+T` |
 | Insert image | `Ctrl+I` |
+| Draw | `Ctrl+Shift+D` |
 | Search | `Ctrl+F` |
 | Find next | `F3` |
 | Find previous | `Shift+F3` |
@@ -179,7 +181,7 @@ The log rotates at 2 MB, keeps three copies, and never contains the document tex
 
 ### Accessibility and keyboard
 
-- All main controls have accessible names and descriptions: window, canvas, navigation, page selector, thumbnails, text dialog, and properties panel.
+- All main controls have accessible names and descriptions: window, canvas, navigation, page selector, thumbnails, text dialog, drawing toolbar, and properties panel.
 - Form labels are associated with their fields, and the `Tab` order follows a logical sequence: navigation → thumbnails → canvas, and text → font → size → color → alignment in the dialog.
 - Each thumbnail announces “Page N”, and its tooltip indicates which page it leads to.
 - The canvas has explicit focus and updates its description with the page, type, and dimensions.
@@ -227,6 +229,9 @@ You can also generate a single file with `--onefile`, although it takes longer t
 - Thumbnails reflect page order and extra rotation, but are generated from the original PDF: added text, images, and redactions do not appear in them.
 - View rotation is not saved to the file; page rotation is applied on export.
 - Image replacement is not available for inline images, images inside forms, or images without a reliable `xref`.
+- Drawing only supports freehand strokes: there are no straight lines, arrows, shapes, or highlighter yet, and pen pressure or tilt is not captured.
+- A stroke is new vector content; it covers text but does not remove it. Use redaction for permanent removal.
+- The thickness of a stroke is fixed when it is created; resizing changes its shape, not its line width.
 - Redaction may affect objects that overlap the marked region; review it before exporting.
 - If a particular page cannot be rendered, a warning is shown and the details are written to the log.
 - The interface has been verified in offscreen mode on Windows (and in CI on Ubuntu); a visual review with a real display, DPI, and screen reader is still pending before a distributable version.

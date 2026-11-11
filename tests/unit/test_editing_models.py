@@ -10,6 +10,7 @@ import pytest
 from bene.domain.editing import (
     AddImageCommand,
     AddRedactionCommand,
+    AddStrokeCommand,
     AddTextCommand,
     DeleteObjectCommand,
     EditObject,
@@ -17,6 +18,8 @@ from bene.domain.editing import (
     MoveObjectCommand,
     RedactionObject,
     ResizeObjectCommand,
+    StrokeObject,
+    StrokeStyle,
     TextAlignment,
     TextObject,
     TextStyle,
@@ -32,6 +35,15 @@ def text_object(object_id: str = "texto-1") -> TextObject:
         page_index=0,
         rect=PdfRect(10, 20, 210, 80),
         text="Hola",
+    )
+
+
+def stroke_object(object_id: str = "trazo-1") -> StrokeObject:
+    return StrokeObject(
+        object_id=object_id,
+        page_index=0,
+        points=((10.0, 20.0), (50.0, 40.0)),
+        style=StrokeStyle(color="#ff0000", width=2.0),
     )
 
 
@@ -67,7 +79,53 @@ class TestTextStyle:
         assert TextStyle(color="#a1B2c3").color == "#a1B2c3"
 
 
+class TestStrokeStyle:
+    def test_valores_por_defecto(self) -> None:
+        style = StrokeStyle()
+
+        assert style.color == "#000000"
+        assert style.width == 2.0
+
+    @pytest.mark.parametrize("width", [0, -1, float("inf"), float("nan")])
+    def test_rechaza_grosores_invalidos(self, width: float) -> None:
+        with pytest.raises(ValueError):
+            StrokeStyle(width=width)
+
+    def test_rechaza_color_no_hexadecimal(self) -> None:
+        with pytest.raises(ValueError):
+            StrokeStyle(color="rojo")
+
+
 class TestObjetos:
+    def test_el_trazo_calcula_su_caja_incluido_el_grosor(self) -> None:
+        stroke = stroke_object()
+
+        assert stroke.rect == PdfRect(9, 19, 51, 41)
+
+    def test_un_punto_aislado_tiene_area_seleccionable(self) -> None:
+        stroke = StrokeObject(
+            object_id="trazo-1",
+            page_index=0,
+            points=((10.0, 20.0),),
+            style=StrokeStyle(width=6.0),
+        )
+
+        assert stroke.rect == PdfRect(7, 17, 13, 23)
+
+    def test_el_trazo_valida_puntos_e_identidad(self) -> None:
+        with pytest.raises(ValueError):
+            StrokeObject(object_id="trazo-1", page_index=0, points=())
+        with pytest.raises(ValueError):
+            StrokeObject(
+                object_id="trazo-1",
+                page_index=0,
+                points=((float("nan"), 20.0),),
+            )
+        with pytest.raises(ValueError):
+            StrokeObject(object_id=" ", page_index=0, points=((10.0, 20.0),))
+        with pytest.raises(ValueError):
+            StrokeObject(object_id="trazo-1", page_index=-1, points=((10.0, 20.0),))
+
     def test_el_texto_valida_su_contenido_y_geometria(self) -> None:
         with pytest.raises(ValueError):
             TextObject(
@@ -126,6 +184,39 @@ class TestComandos:
         objects = apply_command(objects, AddImageCommand(image))
 
         assert objects == {"texto-1": text, "imagen-1": image}
+
+    def test_anadir_trazo(self) -> None:
+        stroke = stroke_object()
+
+        objects = apply_command({}, AddStrokeCommand(stroke))
+
+        assert objects == {"trazo-1": stroke}
+
+    def test_mover_un_trazo_desplaza_sus_puntos(self) -> None:
+        stroke = stroke_object()
+
+        objects = apply_command(
+            {"trazo-1": stroke},
+            MoveObjectCommand("trazo-1", 0, PdfRect(19, 24, 61, 46)),
+        )
+
+        moved = objects["trazo-1"]
+        assert isinstance(moved, StrokeObject)
+        assert moved.points == ((20.0, 25.0), (60.0, 45.0))
+        assert moved.rect == PdfRect(19, 24, 61, 46)
+
+    def test_redimensionar_un_trazo_escala_sus_puntos(self) -> None:
+        stroke = stroke_object()
+
+        objects = apply_command(
+            {"trazo-1": stroke},
+            ResizeObjectCommand("trazo-1", 0, PdfRect(0, 0, 82, 42)),
+        )
+
+        resized = objects["trazo-1"]
+        assert isinstance(resized, StrokeObject)
+        assert resized.points == ((1.0, 1.0), (81.0, 41.0))
+        assert resized.style.width == 2.0
 
     def test_anadir_redaccion(self) -> None:
         redaction = RedactionObject(

@@ -13,20 +13,24 @@ from PySide6.QtGui import (
     QAction,
     QActionGroup,
     QCloseEvent,
+    QColor,
     QDragEnterEvent,
     QDropEvent,
     QKeySequence,
     QResizeEvent,
 )
 from PySide6.QtWidgets import (
+    QColorDialog,
     QDialog,
     QDockWidget,
+    QDoubleSpinBox,
     QFileDialog,
     QInputDialog,
     QLabel,
     QLineEdit,
     QMainWindow,
     QMessageBox,
+    QPushButton,
     QScrollArea,
     QSpinBox,
     QToolBar,
@@ -45,6 +49,8 @@ from bene.domain.editing import (
     ImageObject,
     ImageReplacementObject,
     RedactionObject,
+    StrokeObject,
+    StrokeStyle,
     TextObject,
     TextStyle,
 )
@@ -105,6 +111,9 @@ class MainWindow(QMainWindow):
         self._selected_object_id: str | None = None
         self._pending_text: tuple[str, TextStyle] | None = None
         self._pending_image: LoadedImage | None = None
+        self._last_text_style: TextStyle | None = None
+        self._stroke_style = StrokeStyle()
+        self._stroke_color = QColor(self._stroke_style.color)
         self._thumbnail_loader = ThumbnailLoader(self)
         self._thumbnail_loader.ready.connect(self._on_thumbnail_ready)
         self._thumbnail_loader.failed.connect(self._on_thumbnail_failed)
@@ -183,6 +192,23 @@ class MainWindow(QMainWindow):
     @property
     def properties_panel(self) -> ObjectPropertiesPanel:
         return self._properties
+
+    @property
+    def stroke_style(self) -> StrokeStyle:
+        """Color y grosor con los que se crearán los trazos nuevos."""
+        return self._stroke_style
+
+    @property
+    def stroke_width_spin(self) -> QDoubleSpinBox:
+        return self._stroke_width
+
+    @property
+    def stroke_color_button(self) -> QPushButton:
+        return self._stroke_color_button
+
+    @property
+    def draw_action(self) -> QAction:
+        return self._draw_tool_action
 
     @property
     def search_panel(self) -> SearchPanel:
@@ -316,6 +342,7 @@ class MainWindow(QMainWindow):
         self._canvas.region_selected.connect(self._on_region_selected)
         self._canvas.redaction_requested.connect(self._on_redaction_requested)
         self._canvas.placement_requested.connect(self._on_placement_requested)
+        self._canvas.stroke_requested.connect(self._on_stroke_requested)
         self._scroll = QScrollArea(self)
         self._scroll.setWidget(self._canvas)
         self._scroll.setWidgetResizable(False)
@@ -420,11 +447,19 @@ class MainWindow(QMainWindow):
         )
         self._redact_tool_action.triggered.connect(lambda: self.set_canvas_tool(CanvasTool.REDACT))
 
+        self._draw_tool_action = QAction("Dibujar", self)
+        self._draw_tool_action.setObjectName("accion_dibujar")
+        self._draw_tool_action.setCheckable(True)
+        self._draw_tool_action.setShortcut(QKeySequence("Ctrl+Shift+D"))
+        self._draw_tool_action.setStatusTip("Dibuja trazos libres sobre la página")
+        self._draw_tool_action.triggered.connect(lambda: self.set_canvas_tool(CanvasTool.DRAW))
+
         self._tool_group = QActionGroup(self)
         self._tool_group.setExclusive(True)
         self._tool_group.addAction(self._select_tool_action)
         self._tool_group.addAction(self._region_tool_action)
         self._tool_group.addAction(self._redact_tool_action)
+        self._tool_group.addAction(self._draw_tool_action)
 
         self._add_text_action = QAction("Añadir texto…", self)
         self._add_text_action.setObjectName("accion_anadir_texto")
@@ -517,6 +552,7 @@ class MainWindow(QMainWindow):
             self._select_tool_action,
             self._region_tool_action,
             self._redact_tool_action,
+            self._draw_tool_action,
             self._add_text_action,
             self._add_image_action,
             self._undo_action,
@@ -560,6 +596,29 @@ class MainWindow(QMainWindow):
         self._next_button.setShortcut(QKeySequence("PgDown"))
         self._next_button.clicked.connect(self.next_page)
 
+        self._stroke_width = QDoubleSpinBox(self)
+        self._stroke_width.setObjectName("grosor_trazo")
+        self._stroke_width.setRange(0.5, 50.0)
+        self._stroke_width.setDecimals(1)
+        self._stroke_width.setSingleStep(0.5)
+        self._stroke_width.setSuffix(" pt")
+        self._stroke_width.setValue(self._stroke_style.width)
+        self._stroke_width.setAccessibleName("Grosor del trazo")
+        self._stroke_width.setAccessibleDescription(
+            "Grosor en puntos del trazo que se dibujará sobre la página."
+        )
+        self._stroke_width.valueChanged.connect(self._on_stroke_width_changed)
+
+        self._stroke_color_button = QPushButton(self)
+        self._stroke_color_button.setObjectName("color_trazo")
+        self._stroke_color_button.setAccessibleName("Color del trazo")
+        self._stroke_color_button.setAccessibleDescription(
+            "Color con el que se dibujarán los trazos nuevos."
+        )
+        self._stroke_color_button.clicked.connect(self._choose_stroke_color)
+        self._update_stroke_color_button()
+        self._canvas.set_stroke_style(self._stroke_style)
+
         toolbar = QToolBar("Principal", self)
         toolbar.setObjectName("toolbar_principal")
         toolbar.setMovable(False)
@@ -585,12 +644,23 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self._select_tool_action)
         toolbar.addAction(self._region_tool_action)
         toolbar.addAction(self._redact_tool_action)
+        toolbar.addAction(self._draw_tool_action)
         toolbar.addAction(self._add_text_action)
         toolbar.addAction(self._add_image_action)
         toolbar.addAction(self._undo_action)
         toolbar.addAction(self._redo_action)
         toolbar.addAction(self._delete_action)
         self.addToolBar(toolbar)
+
+        drawing_toolbar = QToolBar("Dibujo", self)
+        drawing_toolbar.setObjectName("toolbar_dibujo")
+        drawing_toolbar.setMovable(False)
+        drawing_toolbar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+        drawing_toolbar.addAction(self._draw_tool_action)
+        drawing_toolbar.addWidget(QLabel("Grosor:", self))
+        drawing_toolbar.addWidget(self._stroke_width)
+        drawing_toolbar.addWidget(self._stroke_color_button)
+        self.addToolBar(Qt.ToolBarArea.TopToolBarArea, drawing_toolbar)
 
         file_menu = self.menuBar().addMenu("&Archivo")
         file_menu.addAction(self._open_action)
@@ -614,6 +684,7 @@ class MainWindow(QMainWindow):
         edit_menu.addAction(self._select_tool_action)
         edit_menu.addAction(self._region_tool_action)
         edit_menu.addAction(self._redact_tool_action)
+        edit_menu.addAction(self._draw_tool_action)
         edit_menu.addSeparator()
         edit_menu.addAction(self._add_text_action)
         edit_menu.addAction(self._add_image_action)
@@ -1022,6 +1093,18 @@ class MainWindow(QMainWindow):
             self._region_tool_action.setChecked(True)
         elif tool is CanvasTool.REDACT:
             self._redact_tool_action.setChecked(True)
+        elif tool is CanvasTool.DRAW:
+            self._draw_tool_action.setChecked(True)
+
+    def set_stroke_style(self, style: StrokeStyle) -> None:
+        """Actualiza la barra de dibujo y el estilo de los trazos nuevos."""
+        self._stroke_style = style
+        self._stroke_color = QColor(style.color)
+        self._stroke_width.blockSignals(True)
+        self._stroke_width.setValue(style.width)
+        self._stroke_width.blockSignals(False)
+        self._update_stroke_color_button()
+        self._canvas.set_stroke_style(style)
 
     def add_text_object(
         self,
@@ -1033,6 +1116,23 @@ class MainWindow(QMainWindow):
         if session is None or not text.strip():
             return None
         obj = session.add_text(self._source_page_index(), rect, text, style)
+        self._selected_object_id = obj.object_id
+        self._refresh_edit_ui()
+        return obj
+
+    def add_stroke_object(
+        self,
+        points: Iterable[tuple[float, float]],
+        style: StrokeStyle | None = None,
+    ) -> StrokeObject | None:
+        session = self._edit_session
+        if session is None:
+            return None
+        obj = session.add_stroke(
+            self._source_page_index(),
+            points,
+            style if style is not None else self._stroke_style,
+        )
         self._selected_object_id = obj.object_id
         self._refresh_edit_ui()
         return obj
@@ -1544,6 +1644,29 @@ class MainWindow(QMainWindow):
         self.add_redaction_object(region)
         self._status_activity.setText("Redacción marcada; se aplicará al exportar")
 
+    def _on_stroke_requested(self, points: object, style: object) -> None:
+        if not isinstance(points, tuple) or not points:
+            return
+        stroke_style = style if isinstance(style, StrokeStyle) else self._stroke_style
+        if self.add_stroke_object(points, stroke_style) is not None:
+            self._status_activity.setText("Trazo añadido")
+
+    def _on_stroke_width_changed(self, value: float) -> None:
+        self.set_stroke_style(StrokeStyle(color=self._stroke_color.name(), width=value))
+
+    def _choose_stroke_color(self) -> None:
+        color = QColorDialog.getColor(self._stroke_color, self, "Color del trazo")
+        if color.isValid():
+            self._stroke_color = color
+            self.set_stroke_style(StrokeStyle(color=color.name(), width=self._stroke_width.value()))
+
+    def _update_stroke_color_button(self) -> None:
+        contrast = "#000000" if self._stroke_color.lightness() > 128 else "#ffffff"
+        self._stroke_color_button.setText(self._stroke_color.name())
+        self._stroke_color_button.setStyleSheet(
+            f"background-color: {self._stroke_color.name()}; color: {contrast};"
+        )
+
     def _on_placement_requested(self, page_x: float, page_y: float) -> None:
         if self._pending_text is not None:
             rect = self._default_text_rect(page_x, page_y)
@@ -1578,9 +1701,10 @@ class MainWindow(QMainWindow):
     def _add_text(self) -> None:
         if self._edit_session is None:
             return
-        dialog = TextDialog(self)
+        dialog = TextDialog(self, style=self._last_text_style)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
+        self._last_text_style = dialog.chosen_style
         self._pending_text = (dialog.text, dialog.chosen_style)
         self._pending_image = None
         region = self._canvas.region
@@ -1734,12 +1858,13 @@ class MainWindow(QMainWindow):
         self._status_activity.setText(f"Exportado: {result.destination.name}")
         logger.info(
             "Documento exportado a %s (%d redacciones, %d textos, %d imágenes, "
-            "%d reemplazos de imagen)",
+            "%d reemplazos de imagen, %d trazos)",
             result.destination,
             result.redaction_count,
             result.text_count,
             result.image_count,
             result.replacement_count,
+            result.stroke_count,
         )
         return result
 

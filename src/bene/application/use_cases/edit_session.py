@@ -8,7 +8,7 @@ el documento en un estado intermedio inconsistente.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 
 from bene.domain.editing import (
@@ -16,6 +16,7 @@ from bene.domain.editing import (
     AddImageCommand,
     AddImageReplacementCommand,
     AddRedactionCommand,
+    AddStrokeCommand,
     AddTextCommand,
     DeleteObjectCommand,
     DeletePageCommand,
@@ -28,6 +29,8 @@ from bene.domain.editing import (
     RedactionObject,
     ResizeObjectCommand,
     RotatePageCommand,
+    StrokeObject,
+    StrokeStyle,
     TextObject,
     TextStyle,
     apply_command,
@@ -182,6 +185,22 @@ class EditSession:
             style=style if style is not None else TextStyle(),
         )
         self._push(AddTextCommand(obj))
+        return obj
+
+    def add_stroke(
+        self,
+        page_index: int,
+        points: Iterable[tuple[float, float]],
+        style: StrokeStyle | None = None,
+    ) -> StrokeObject:
+        self._require_page_for_object(page_index)
+        obj = StrokeObject(
+            object_id=self._new_id("trazo"),
+            page_index=page_index,
+            points=tuple(points),
+            style=style if style is not None else StrokeStyle(),
+        )
+        self._push(AddStrokeCommand(obj))
         return obj
 
     def add_image(

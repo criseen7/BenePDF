@@ -91,6 +91,7 @@ Prioridades: **M** = obligatorio para el MVP; **S** = siguiente fase; **F** = fu
 | RF-023 | S | Proteger operaciones destructivas con confirmación. | Las acciones de redacción permanente y eliminación de páginas muestran qué se eliminará antes de proceder. |
 | RF-024 | F | Comparar visualmente antes y después. | Una vista dividida o alternable permite inspeccionar páginas antes de exportar. |
 | RF-025 | F | Procesar múltiples archivos por lotes. | La aplicación informa el progreso y el resultado individual de cada archivo, sin detener todo el lote por un único error. |
+| RF-026 | S | Dibujar trazos libres sobre la página con color y grosor configurables. | El usuario dibuja a mano alzada, elige color y grosor en la barra de dibujo y puede seleccionar, mover, redimensionar, eliminar, deshacer y rehacer el trazo antes de exportar. Los trazos se guardan como vectores en el archivo exportado y el original no se modifica. |
 
 ### 4.1 Reglas de negocio
 
@@ -102,6 +103,7 @@ Prioridades: **M** = obligatorio para el MVP; **S** = siguiente fase; **F** = fu
 - **RN-006:** el OCR es probabilístico; el usuario debe poder revisar y corregir el texto reconocido antes de utilizarlo.
 - **RN-007:** una operación cancelada o fallida no debe dejar el archivo fuente parcialmente modificado.
 - **RN-008:** los cambios de la sesión deben representarse como operaciones reversibles hasta que una operación destructiva se confirme y aplique a la copia de trabajo.
+- **RN-009:** un trazo libre es contenido vectorial nuevo; cubrir texto con un trazo no elimina el texto subyacente. Para ocultarlo de forma permanente hay que usar una redacción.
 
 ## 5. Requisitos no funcionales (RNF)
 
@@ -239,8 +241,13 @@ pdf-studio-local/
 │   ├── requirements.md
 │   ├── architecture.md
 │   ├── decisions/
-│   │   ├── ADR-001-desktop-ui.md
-│   │   └── ADR-002-pdf-engine.md
+│   │   ├── ADR-001-motor-pdf.md
+│   │   ├── ADR-002-modelo-de-edicion.md
+│   │   ├── ADR-003-exportacion-y-redaccion.md
+│   │   ├── ADR-004-fuentes-embebidas.md
+│   │   ├── ADR-005-empaquetado-y-ci.md
+│   │   ├── ADR-006-paginas-busqueda-y-reemplazo.md
+│   │   └── ADR-007-dibujo-libre.md
 │   └── test-plan.md
 ├── src/
 │   └── pdf_studio/

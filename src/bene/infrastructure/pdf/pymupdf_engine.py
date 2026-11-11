@@ -33,6 +33,7 @@ from bene.domain.editing import (
     ImageObject,
     ImageReplacementObject,
     RedactionObject,
+    StrokeObject,
     TextAlignment,
     TextObject,
 )
@@ -193,6 +194,40 @@ def _unsupported_characters(font: pymupdf.Font, text: str) -> tuple[str, ...]:
                 if not character.isspace() and not font.has_glyph(ord(character))
             }
         )
+    )
+
+
+def _visible_point_to_page(page: pymupdf.Page, point: tuple[float, float]) -> pymupdf.Point:
+    """Convierte un punto visible al espacio sin rotar de la página."""
+    x, y = point
+    cropbox = page.cropbox
+    to_pdf = pymupdf.Matrix(1, 0, 0, -1, -cropbox.x0, cropbox.y1) * page.rotation_matrix
+    return pymupdf.Point(x, y) * ~to_pdf * page.transformation_matrix
+
+
+def _insert_stroke(page: pymupdf.Page, obj: StrokeObject) -> None:
+    """Dibuja un trazo libre como vector en la página."""
+    points = [_visible_point_to_page(page, point) for point in obj.points]
+    color = _hex_to_rgb(obj.style.color)
+    if len(points) == 1:
+        # El relleno define el diámetro; un borde del mismo grosor duplicaría
+        # el tamaño del punto.
+        page.draw_circle(
+            points[0],
+            obj.style.width / 2.0,
+            color=color,
+            fill=color,
+            width=0,
+            lineCap=1,
+            lineJoin=1,
+        )
+        return
+    page.draw_polyline(
+        points,
+        color=color,
+        width=obj.style.width,
+        lineCap=1,
+        lineJoin=1,
     )
 
 
@@ -625,6 +660,8 @@ class PyMuPDFDocument:
                 for obj in page_objects:
                     if isinstance(obj, TextObject):
                         _insert_text(page, obj)
+                    elif isinstance(obj, StrokeObject):
+                        _insert_stroke(page, obj)
                     elif isinstance(obj, ImageObject):
                         page.insert_image(
                             _visible_rect_to_page(page, obj.rect),

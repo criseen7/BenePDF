@@ -1,6 +1,6 @@
 # PLAN — Bene PDF
 
-- **Estado:** iteración 6 implementada y verificada; pendiente la revisión visual en Windows
+- **Estado:** iteración 7 implementada y verificada; pendiente la revisión visual en Windows
 - **Última actualización:** 2026-11-10
 - **Especificación de referencia:** [docs/requirements.md](docs/requirements.md)
 
@@ -16,6 +16,7 @@
 | Modelo de edición | Comandos inmutables en memoria; el PDF fuente nunca se modifica | Deshacer/rehacer correcto y cumplimiento de RN-001 y RN-008 |
 | Persistencia | Nada se guarda hasta exportar; la exportación escribe a temporal y valida | Integridad del archivo original (RNF-005) |
 | Redacción | Se aplica antes que el contenido nuevo; texto y vectores se eliminan, las imágenes se redactan por píxeles | Permite «redactar y escribir encima» sin destruir escaneos completos (RN-004, RNF-008) |
+| Dibujo libre | Trazos vectoriales con puntos en coordenadas visibles y grosor en puntos PDF | Se seleccionan y transforman como el resto de objetos y no pierden calidad al ampliar (RF-026, ADR-007) |
 | Empaquetado | PyInstaller 6 en modo carpeta (`--onedir`) | Incluye Qt, MuPDF y fuentes sin exigir Python en destino (RNF-016) |
 | CI | GitHub Actions en Windows y Ubuntu, pruebas lentas aparte | Detecta regresiones de plataforma y mantiene la suite rápida (RNF-017) |
 | Miniaturas | Iteración 2 | Mantener la primera iteración pequeña y verificable |
@@ -425,7 +426,59 @@ deshacer/rehacer compartido con las ediciones de objetos.
    compartida, el diálogo avisa de que cambiará en todas sus páginas.
 7. `pytest`, `ruff` y `mypy` en verde, con la suite rápida y las pruebas lentas.
 
-## 8. Estructura objetivo
+## 8. Iteración 7 — dibujo libre
+
+**Objetivo verificable:** dibujar trazos a mano alzada con color y grosor
+configurables, seleccionarlos y transformarlos como cualquier otro objeto,
+deshacerlos y exportarlos como vectores sin modificar el PDF original.
+
+### Paso 1 — Modelo y sesión (RF-026)
+
+- [x] `StrokeStyle` con color `#rrggbb`, grosor en puntos y validación
+- [x] `StrokeObject` con puntos en coordenadas visibles y `rect` calculado con el grosor
+- [x] `AddStrokeCommand` en el historial compartido
+- [x] Mover desplaza los puntos; redimensionar los escala y conserva el grosor
+- [x] `EditSession.add_stroke` con identificadores `trazo-N`
+
+### Paso 2 — Exportación vectorial
+
+- [x] Conversión de cada punto visible al espacio sin rotar de la página
+- [x] `draw_polyline` con extremos y uniones redondeados
+- [x] Punto aislado con `draw_circle` relleno y sin borde duplicado
+- [x] Trazos después de redacciones y antes de la rotación adicional y `document.select`
+- [x] `stroke_count` en `ExportResult` y en el resumen de exportación
+- [x] Los trazos de páginas eliminadas no se exportan
+
+### Paso 3 — Lienzo e interfaz
+
+- [x] `CanvasTool.DRAW` con vista previa, captura y deduplicación de puntos
+- [x] La herramienta permanece activa después de cada trazo
+- [x] Acción **Dibujar** (`Ctrl+Shift+D`) y barra **Dibujo**
+- [x] Grosor de `0.5` a `50` pt y selector de color
+- [x] Panel de propiedades con tipo, color, grosor y número de puntos
+- [x] El diálogo de texto recuerda el último estilo aceptado
+
+### Paso 4 — Cierre
+
+- [x] Pruebas unitarias, de integración y de interfaz
+- [x] ADR-007 de dibujo libre
+- [x] README, README.es.md y PLAN actualizados
+- [x] `pytest`, `ruff` y `mypy` en verde, incluida la suite lenta
+
+### Criterios de verificación de la iteración 7
+
+1. Dibujar con el ratón crea un trazo con el color y el grosor elegidos y la
+   herramienta sigue activa para el siguiente trazo.
+2. El trazo se puede seleccionar, mover, redimensionar, eliminar y
+   deshacer/rehacer; al redimensionar cambia la forma pero no el grosor.
+3. Un clic sin arrastre crea un punto visible y seleccionable.
+4. La exportación dibuja los trazos como vectores sobre la página correcta,
+   respeta `/Rotate`, CropBox y la rotación adicional, y no modifica el original.
+5. Los trazos de páginas eliminadas no aparecen en el archivo exportado.
+6. El resumen y el registro de exportación cuentan los trazos.
+7. `pytest`, `ruff` y `mypy` en verde, con la suite rápida y las pruebas lentas.
+
+## 9. Estructura objetivo
 
 ```text
 EditorPDF-Local/
@@ -475,7 +528,7 @@ EditorPDF-Local/
     └── fixtures/
 ```
 
-## 9. Criterios de verificación de la iteración 1
+## 10. Criterios de verificación de la iteración 1
 
 1. `pytest` en verde en Windows (unitarias, integración y UI offscreen).
 2. `ruff check` y `ruff format --check` sin errores.
@@ -484,7 +537,7 @@ EditorPDF-Local/
 5. PDF corrupto, cifrado y escaneado: mensajes claros y sin cierre inesperado.
 6. El log existe, rota y no contiene texto del documento.
 
-## 10. Criterios de verificación de la iteración 2
+## 11. Criterios de verificación de la iteración 2
 
 1. Las cuatro rotaciones de vista convierten pantalla ↔ PDF sin desfases y la ida y vuelta conserva el punto.
 2. Se puede añadir, mover, redimensionar y eliminar texto e imágenes con la vista previa actualizada.
@@ -493,7 +546,7 @@ EditorPDF-Local/
 5. El PDF original no se modifica y no se escribe ningún archivo.
 6. `pytest`, `ruff` y `mypy` en verde y smoke real offscreen correcto.
 
-## 11. Criterios de verificación de la iteración 3
+## 12. Criterios de verificación de la iteración 3
 
 1. El texto de una región redactada no se puede extraer del archivo exportado.
 2. El PDF original conserva exactamente sus bytes y nunca se sobrescribe.
@@ -504,7 +557,7 @@ EditorPDF-Local/
 7. Los PDF cifrados se rechazan de forma explícita y no se degrada su protección.
 8. `pytest`, `ruff` y `mypy` en verde y smoke real offscreen correcto.
 
-## 12. Riesgos abiertos
+## 13. Riesgos abiertos
 
 | Riesgo | Impacto | Mitigación |
 |---|---|---|
@@ -516,11 +569,14 @@ EditorPDF-Local/
 | El build depende de hooks de PyInstaller para PySide6/PyMuPDF | Medio | `--collect-all pymupdf`, comprobación de fuentes y `--version` en CI |
 | La accesibilidad automática no equivale a un lector de pantalla | Medio | Nombres, etiquetas y orden de tabulación probados; falta revisión manual con Narrador/Orca |
 | Linux no se ha probado visualmente | Bajo | CI ejecuta pruebas offscreen en Ubuntu con las bibliotecas de Qt |
-| La búsqueda no incluye OCR | Bajo | Se documenta; los escaneos no devuelven texto hasta la iteración 7 |
+| La búsqueda no incluye OCR | Bajo | Se documenta; los escaneos no devuelven texto hasta una iteración futura con OCR |
 | Reemplazar una imagen compartida cambia todas sus apariciones | Medio | El diálogo muestra las páginas afectadas antes de aceptar |
 | Algunas imágenes no se pueden reemplazar (en línea, formularios, sin `xref`) | Bajo | Se omiten en la detección y el diálogo explica la limitación |
+| Un trazo con muchísimos puntos engorda el PDF y ralentiza la vista previa | Bajo | El lienzo descarta muestras muy próximas; el trazo se guarda como vector, no como imagen |
+| El grosor no cambia al redimensionar un trazo | Bajo | Es una decisión de ADR-007; para engrosarlo se dibuja de nuevo o se ajusta el estilo antes |
+| Dibujar no sustituye a la redacción | Medio | La interfaz y la documentación recuerdan que un trazo tapa pero no elimina el texto subyacente (RN-009) |
 
-## 13. Backlog posterior
+## 14. Backlog posterior
 
 | Iteración | Contenido |
 |---|---|
@@ -529,9 +585,10 @@ EditorPDF-Local/
 | 4 | **Completada:** corrección del redimensionado y de la exportación en páginas rotadas/recortadas, fuentes embebidas y avisos de overflow |
 | 5 | **Completada:** errores de exportación accionables, accesibilidad, PDFs de 100 páginas, PyInstaller, CI en Windows/Ubuntu y ADR-005 |
 | 6 | **Completada:** búsqueda de texto, información del documento, operaciones de páginas (rotar, reordenar, eliminar, extraer) y reemplazo de imagen |
-| 7 | OCR local opcional y comparación antes/después |
+| 7 | **Completada:** dibujo libre con trazos vectoriales, color y grosor, transformación, historial y exportación (ADR-007) |
+| 8 | OCR local opcional, líneas/formas/flechas, resaltador y comparación antes/después |
 
-## 14. Bitácora
+## 15. Bitácora
 
 | Fecha | Avance |
 |---|---|
@@ -554,8 +611,9 @@ EditorPDF-Local/
 | 2026-11-10 | Iteración 6 completada. Búsqueda de texto en segundo plano con resaltado y navegación; diálogo de información con metadatos, tamaño y páginas de salida; `PageArrangement` con índices fuente estables y comandos de rotar, mover y eliminar páginas en el historial; extracción de una selección sin alterar la sesión; reemplazo de imágenes incrustadas con aviso de imágenes compartidas; exportación con orden, eliminación y rotación adicional; ADR-006, README y PLAN actualizados. Revisión de la iteración 5/6: se corrigió la validación de rango en objetos, se hizo inmutable `PageArrangement.rotations`, su igualdad incluye la rotación y el resumen de exportación ya no cuenta objetos de páginas eliminadas. 562 pruebas rápidas y 2 lentas en verde, `ruff` y `mypy` limpios. |
 | 2026-11-10 | Corregido el CI de Windows: PyMuPDF 2.1 declara constantes que 2.0 solo expone en tiempo de ejecución, así que los `# type: ignore` sobraban en CI y faltaban en local. Las constantes de redacción y cifrado se leen con un auxiliar `getattr` que funciona con ambas versiones. Verificado con PyMuPDF 2.0 y 2.1: 562 pruebas rápidas y 2 lentas en verde, `ruff` y `mypy` limpios. |
 | 2026-11-10 | README bilingüe: `README.md` pasa a ser la guía principal en inglés y el contenido español se conserva en `README.es.md`, con enlaces cruzados entre ambos. Se anota que la interfaz y la documentación detallada siguen en español. |
+| 2026-11-10 | Iteración 7 completada. Dibujo libre con `StrokeStyle`, `StrokeObject` y `AddStrokeCommand`; puntos en coordenadas visibles y caja calculada con el grosor; mover y redimensionar transforman los puntos y conservan el grosor; herramienta **Dibujar** (`Ctrl+Shift+D`) con vista previa, deduplicación y barra de color/grosor; panel de propiedades y memoria del último estilo de texto; exportación vectorial con `draw_polyline`/`draw_circle`, rotaciones, CropBox, redacción y páginas eliminadas; `stroke_count` en el resumen; ADR-007, requisitos y README bilingüe actualizados. 605 pruebas rápidas y 2 lentas en verde, `ruff` y `mypy` limpios. |
 
-## 15. Notas de entorno
+## 16. Notas de entorno
 
 - El paquete y el comando se llaman `bene`. El bloque de estructura de `docs/requirements.md` todavía usa `pdf-studio-local`/`pdf_studio` porque es el documento original del usuario; este plan y el código usan `bene`.
 - **Desviación del plan original:** las rutas se calculan con la biblioteca estándar (`LOCALAPPDATA` en Windows; `XDG_DATA_HOME`/`XDG_STATE_HOME` en Linux) y no con `QStandardPaths`. Motivo: mantener `config.py`, el registro y `bootstrap.py` libres de Qt, de modo que se puedan probar sin `QApplication` y que el arranque no dependa de la inicialización gráfica. En Windows la ubicación es la misma que daría Qt: `%LOCALAPPDATA%\bene-pdf`.

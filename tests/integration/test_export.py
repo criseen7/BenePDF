@@ -12,12 +12,15 @@ from bene.application.use_cases.export_document import ExportDocument
 from bene.domain.editing import (
     ImageObject,
     RedactionObject,
+    StrokeObject,
+    StrokeStyle,
     TextAlignment,
     TextObject,
     TextStyle,
 )
 from bene.domain.errors import ExportError
 from bene.domain.models import PdfRect
+from bene.domain.pages import PageArrangement
 from bene.infrastructure.pdf.pymupdf_engine import PyMuPDFEngine
 from tests.integration import synthetic
 
@@ -31,10 +34,11 @@ def export(
     engine: PyMuPDFEngine,
     source: Path,
     destination: Path,
-    objects: tuple[TextObject | ImageObject | RedactionObject, ...],
+    objects: tuple[TextObject | ImageObject | RedactionObject | StrokeObject, ...],
+    arrangement: PageArrangement | None = None,
 ) -> None:
     with closing(engine.open_document(source)) as document:
-        ExportDocument()(document, destination, objects=objects)
+        ExportDocument()(document, destination, objects=objects, arrangement=arrangement)
 
 
 def text_of(path: Path) -> str:
@@ -571,3 +575,168 @@ class TestPaginasRotadas:
         export(engine, source, destination, (redaction,))
 
         assert "Página rotada" not in text_of(destination)
+
+
+class TestTrazos:
+    def test_exporta_color_grosor_y_posicion(self, engine: PyMuPDFEngine, tmp_path: Path) -> None:
+        source = synthetic.make_empty_pdf(tmp_path / "original.pdf")
+        original = source.read_bytes()
+        destination = tmp_path / "con-trazo.pdf"
+        style = StrokeStyle(color="#ff0000", width=6.0)
+        obj = StrokeObject(
+            "trazo-1",
+            0,
+            ((100.0, 100.0), (200.0, 100.0), (200.0, 150.0)),
+            style,
+        )
+
+        export(engine, source, destination, (obj,))
+
+        assert source.read_bytes() == original
+        with pymupdf.open(destination) as document:
+            page = document[0]
+            drawings = [item for item in page.get_drawings() if item["color"] is not None]
+            assert drawings
+            drawing = drawings[-1]
+            assert drawing["color"] == pytest.approx((1.0, 0.0, 0.0))
+            assert drawing["width"] == pytest.approx(style.width)
+            pixmap = page.get_pixmap(alpha=False)
+            bbox = non_white_bbox(pixmap, pymupdf.Rect(90, 90, 210, 160))
+            assert bbox == pytest.approx((97, 97, 203, 153), abs=3)
+
+    @pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+    def test_el_trazo_respeta_la_rotacion_de_la_pagina(
+        self, engine: PyMuPDFEngine, tmp_path: Path, rotation: int
+    ) -> None:
+        source = synthetic.make_rotated_empty_pdf(
+            tmp_path / f"trazo-rotado-{rotation}.pdf", rotation=rotation
+        )
+        destination = tmp_path / f"trazo-salida-{rotation}.pdf"
+        obj = StrokeObject(
+            "trazo-1",
+            0,
+            ((50.0, 50.0), (150.0, 50.0)),
+            StrokeStyle(color="#0000ff", width=4.0),
+        )
+
+        export(engine, source, destination, (obj,))
+
+        with pymupdf.open(destination) as document:
+            page = document[0]
+            assert page.rotation == rotation
+            pixmap = page.get_pixmap(alpha=False)
+            bbox = non_white_bbox(pixmap, pymupdf.Rect(0, 0, pixmap.width, pixmap.height))
+            assert bbox == pytest.approx((48, 48, 152, 52), abs=3)
+
+    @pytest.mark.parametrize("rotation", [0, 90, 180, 270])
+    def test_el_trazo_respeta_el_cropbox_desplazado(
+        self, engine: PyMuPDFEngine, tmp_path: Path, rotation: int
+    ) -> None:
+        source = synthetic.make_cropped_rotated_pdf(
+            tmp_path / f"trazo-recortado-{rotation}.pdf", rotation=rotation
+        )
+        destination = tmp_path / f"trazo-recortado-salida-{rotation}.pdf"
+        obj = StrokeObject(
+            "trazo-1",
+            0,
+            ((50.0, 50.0), (150.0, 50.0)),
+            StrokeStyle(color="#008000", width=4.0),
+        )
+
+        export(engine, source, destination, (obj,))
+
+        with pymupdf.open(destination) as document:
+            page = document[0]
+            pixmap = page.get_pixmap(alpha=False)
+            bbox = non_white_bbox(pixmap, pymupdf.Rect(0, 0, pixmap.width, pixmap.height))
+            assert bbox == pytest.approx((48, 48, 152, 52), abs=3)
+
+    def test_la_rotacion_adicional_arrastra_el_trazo(
+        self, engine: PyMuPDFEngine, tmp_path: Path
+    ) -> None:
+        source = synthetic.make_empty_pdf(tmp_path / "original.pdf")
+        destination = tmp_path / "trazo-rotacion-extra.pdf"
+        obj = StrokeObject(
+            "trazo-1",
+            0,
+            ((100.0, 100.0), (200.0, 100.0)),
+            StrokeStyle(color="#ff00ff", width=5.0),
+        )
+
+        export(
+            engine,
+            source,
+            destination,
+            (obj,),
+            arrangement=PageArrangement(1, order=(0,), rotations={0: 90}),
+        )
+
+        with pymupdf.open(destination) as document:
+            page = document[0]
+            assert page.rotation == 90
+            drawings = [item for item in page.get_drawings() if item["color"] is not None]
+            assert drawings
+            assert drawings[-1]["color"] == pytest.approx((1.0, 0.0, 1.0))
+
+    def test_un_punto_aislado_se_exporta_como_punto(
+        self, engine: PyMuPDFEngine, tmp_path: Path
+    ) -> None:
+        source = synthetic.make_empty_pdf(tmp_path / "original.pdf")
+        destination = tmp_path / "punto.pdf"
+        obj = StrokeObject(
+            "trazo-1",
+            0,
+            ((100.0, 100.0),),
+            StrokeStyle(color="#000000", width=10.0),
+        )
+
+        export(engine, source, destination, (obj,))
+
+        with pymupdf.open(destination) as document:
+            page = document[0]
+            pixmap = page.get_pixmap(alpha=False)
+            bbox = non_white_bbox(pixmap, pymupdf.Rect(90, 90, 110, 110))
+            assert bbox == pytest.approx((95, 95, 105, 105), abs=2)
+
+    def test_el_trazo_se_dibuja_sobre_una_redaccion(
+        self, engine: PyMuPDFEngine, tmp_path: Path
+    ) -> None:
+        source = synthetic.make_text_pdf(tmp_path / "original.pdf")
+        destination = tmp_path / "redactado-con-trazo.pdf"
+        objects = (
+            RedactionObject("redaccion-1", 0, PdfRect(60, 80, 500, 120)),
+            StrokeObject(
+                "trazo-1",
+                0,
+                ((100.0, 150.0), (300.0, 150.0)),
+                StrokeStyle(color="#ff0000", width=6.0),
+            ),
+        )
+
+        export(engine, source, destination, objects)
+
+        assert "Contrato de prueba" not in text_of(destination)
+        with pymupdf.open(destination) as document:
+            page = document[0]
+            pixmap = page.get_pixmap(alpha=False)
+            pixel = pixmap.pixel(200, 150)
+            assert pixel[0] > 200 and max(pixel[1:]) < 80
+
+    def test_el_trazo_de_una_pagina_eliminada_no_se_exporta(
+        self, engine: PyMuPDFEngine, tmp_path: Path
+    ) -> None:
+        source = synthetic.make_text_pdf(tmp_path / "original.pdf", pages=2)
+        destination = tmp_path / "sin-segunda.pdf"
+        obj = StrokeObject("trazo-1", 1, ((100.0, 100.0), (200.0, 100.0)))
+
+        export(
+            engine,
+            source,
+            destination,
+            (obj,),
+            arrangement=PageArrangement(2, order=(0,)),
+        )
+
+        with pymupdf.open(destination) as document:
+            assert document.page_count == 1
+            assert not document[0].get_drawings()

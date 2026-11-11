@@ -99,6 +99,17 @@ class TestVentanaPrincipal:
         assert window._page_spin.accessibleDescription()
         assert window._thumbnails.accessibleName() == "Miniaturas de páginas"
 
+    def test_los_controles_de_dibujo_se_anuncian(self, qtbot: QtBot, tmp_path: Path) -> None:
+        window = build_window(qtbot, FakePdfEngine(make_pages(1)))
+        open_ready(qtbot, window, tmp_path)
+
+        assert window.draw_action.text() == "Dibujar"
+        assert window.draw_action.objectName() == "accion_dibujar"
+        assert window.stroke_width_spin.accessibleName() == "Grosor del trazo"
+        assert window.stroke_width_spin.accessibleDescription()
+        assert window.stroke_color_button.accessibleName() == "Color del trazo"
+        assert window.stroke_color_button.accessibleDescription()
+
     def test_el_orden_de_tabulacion_sigue_la_navegacion(self, qtbot: QtBot, tmp_path: Path) -> None:
         window = build_window(qtbot, FakePdfEngine(make_pages(2)))
         open_ready(qtbot, window, tmp_path)

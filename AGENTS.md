@@ -32,7 +32,8 @@ Instalación: `python -m pip install -e ".[dev]"`. Build: instala el extra `buil
 - En `PageArrangement`, `order` y `rotations` usan índices **fuente** (base cero), no posiciones de salida. Una página ausente de `order` está eliminada. En la UI, `MainWindow._page_index` es posición de salida: usa `_source_page_index()` antes de tocar objetos o páginas.
 - `EditSession` reconstruye objetos y disposición reproduciendo todos los comandos activos; los comandos de objeto y de página comparten historial. `is_dirty` compara la tupla de comandos, no solo su número.
 - `PageArrangement.rotations` es un `MappingProxyType`; no lo mutéis. La rotación de vista es solo visual; la rotación adicional de página se aplica al exportar.
-- Orden de exportación: redacciones/ediciones → rotación adicional → `document.select(order)`. No reordenes estos pasos.
+- Los puntos de `StrokeObject` están en coordenadas **visibles** de la página; `rect` se calcula con la caja de los puntos ampliada por `width / 2` y no se almacena. Mover desplaza los puntos y redimensionar los escala, pero el grosor se conserva (ADR-007).
+- Orden de exportación: redacciones/ediciones (textos, imágenes y trazos) → rotación adicional → `document.select(order)`. No reordenes estos pasos.
 - `page.rect` ya aplica `/Rotate`. `PageInfo` guarda dimensiones sin rotar y `rotated_size` aplica la rotación. Las coordenadas de `search_for` y `get_image_info` son sin rotar y se convierten con `rect * page.rotation_matrix`.
 - La redacción debe eliminar el contenido subyacente (hay pruebas de no extracción) y pedir confirmación; no la conviertas en una caja negra.
 - Nunca registres el texto del documento ni contraseñas. El registro rota a 2 MB y conserva tres copias.

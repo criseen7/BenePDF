@@ -14,7 +14,13 @@ from pytestqt.qtbot import QtBot
 from bene.application.ports.pdf_engine import OpenedDocument
 from bene.application.use_cases.open_document import OpenDocument
 from bene.application.use_cases.render_page import RenderPage
-from bene.domain.editing import EditObject, TextObject, TextStyle
+from bene.domain.editing import (
+    EditObject,
+    StrokeObject,
+    StrokeStyle,
+    TextObject,
+    TextStyle,
+)
 from bene.domain.models import PdfRect
 from bene.presentation import main_window as main_window_module
 from bene.presentation.main_window import MainWindow
@@ -246,6 +252,132 @@ class TestImagenes:
         assert len(objects) == 1
         assert objects[0].rect == region
         assert window.canvas.region is None
+
+
+class TestDibujo:
+    def test_la_accion_dibujar_activa_la_herramienta(self, qtbot: QtBot, tmp_path: Path) -> None:
+        window = build_window(qtbot, FakePdfEngine(make_pages(1)))
+        open_ready(qtbot, window, tmp_path)
+
+        assert window.draw_action.isCheckable() is True
+        assert window.draw_action.shortcut().toString() == "Ctrl+Shift+D"
+
+        window.draw_action.trigger()
+
+        assert window.canvas.tool is CanvasTool.DRAW
+        assert window.draw_action.isChecked() is True
+
+    def test_la_barra_actualiza_color_y_grosor(
+        self, qtbot: QtBot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        window = build_window(qtbot, FakePdfEngine(make_pages(1)))
+        open_ready(qtbot, window, tmp_path)
+
+        window.stroke_width_spin.setValue(7.5)
+
+        assert window.stroke_style.width == 7.5
+        assert window.canvas.stroke_style.width == 7.5
+
+        monkeypatch.setattr(
+            main_window_module.QColorDialog,
+            "getColor",
+            lambda *_args, **_kwargs: QColor("#00ff00"),
+        )
+        window.stroke_color_button.click()
+
+        assert window.stroke_style.color == "#00ff00"
+        assert window.canvas.stroke_style.color == "#00ff00"
+        assert window.stroke_color_button.text() == "#00ff00"
+
+    def test_anade_un_trazo_y_lo_selecciona(self, qtbot: QtBot, tmp_path: Path) -> None:
+        window = build_window(qtbot, FakePdfEngine(make_pages(1)))
+        open_ready(qtbot, window, tmp_path)
+        style = StrokeStyle(color="#123456", width=3.0)
+
+        obj = window.add_stroke_object(((10.0, 20.0), (50.0, 40.0)), style)
+
+        assert isinstance(obj, StrokeObject)
+        assert obj is not None
+        assert obj.style == style
+        assert session_objects(window) == (obj,)
+        assert canvas_objects(window) == (obj,)
+        assert window.selected_object_id == obj.object_id
+        assert window.properties_panel.object == obj
+        assert window.properties_panel._title.text() == "Trazo"
+        assert "3" in window.properties_panel._preview.text()
+        assert window.is_dirty is True
+
+    def test_el_lienzo_crea_el_trazo_y_mantiene_la_herramienta(
+        self, qtbot: QtBot, tmp_path: Path
+    ) -> None:
+        window = build_window(qtbot, FakePdfEngine(make_pages(1)))
+        open_ready(qtbot, window, tmp_path)
+        window.stroke_width_spin.setValue(5.0)
+        window.draw_action.trigger()
+        mapper = window.canvas.mapper
+        assert mapper is not None
+        start_x, start_y = mapper.to_view(50, 50)
+        end_x, end_y = mapper.to_view(150, 50)
+
+        qtbot.mousePress(
+            window.canvas, Qt.MouseButton.LeftButton, pos=QPoint(round(start_x), round(start_y))
+        )
+        qtbot.mouseMove(window.canvas, QPoint(round(end_x), round(end_y)))
+        qtbot.mouseRelease(
+            window.canvas, Qt.MouseButton.LeftButton, pos=QPoint(round(end_x), round(end_y))
+        )
+
+        assert window.canvas.tool is CanvasTool.DRAW
+        objects = session_objects(window)
+        assert len(objects) == 1
+        obj = objects[0]
+        assert isinstance(obj, StrokeObject)
+        assert obj.style.width == 5.0
+        assert obj.points[0] == pytest.approx((50.0, 50.0), abs=2)
+        assert obj.points[-1] == pytest.approx((150.0, 50.0), abs=2)
+
+    def test_mueve_redimensiona_y_elimina_un_trazo(self, qtbot: QtBot, tmp_path: Path) -> None:
+        window = build_window(qtbot, FakePdfEngine(make_pages(1)))
+        open_ready(qtbot, window, tmp_path)
+        obj = window.add_stroke_object(((10.0, 20.0), (50.0, 40.0)), StrokeStyle(width=2.0))
+        assert obj is not None
+
+        assert window.move_selected_object(PdfRect(19, 24, 61, 46)) is True
+        moved = window.edit_session.object(obj.object_id) if window.edit_session else None
+        assert isinstance(moved, StrokeObject)
+        assert moved.points == ((20.0, 25.0), (60.0, 45.0))
+
+        assert window.resize_selected_object(PdfRect(0, 0, 82, 42)) is True
+        resized = window.edit_session.object(obj.object_id) if window.edit_session else None
+        assert isinstance(resized, StrokeObject)
+        assert resized.points == ((1.0, 1.0), (81.0, 41.0))
+
+        assert window.delete_selected_object() is True
+        assert session_objects(window) == ()
+        assert window.undo() is True
+        assert session_objects(window) == (resized,)
+
+    def test_el_dialogo_de_texto_recuerda_el_ultimo_estilo(
+        self, qtbot: QtBot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        window = build_window(qtbot, FakePdfEngine(make_pages(1)))
+        open_ready(qtbot, window, tmp_path)
+        seen: list[TextStyle | None] = []
+
+        class RecordingTextDialog(FakeTextDialog):
+            def __init__(self, *_args: object, **kwargs: object) -> None:
+                style = kwargs.get("style")
+                if style is not None and not isinstance(style, TextStyle):
+                    raise TypeError("Estilo de texto inválido")
+                seen.append(style)
+
+        monkeypatch.setattr(main_window_module, "TextDialog", RecordingTextDialog)
+        window.canvas.set_region(PdfRect(10, 20, 210, 80))
+        find_action(window, "Añadir texto…").trigger()
+        window.canvas.set_region(PdfRect(10, 20, 210, 80))
+        find_action(window, "Añadir texto…").trigger()
+
+        assert seen == [None, FakeTextDialog.next_style]
 
 
 class TestTransformaciones:

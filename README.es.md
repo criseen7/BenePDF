@@ -4,7 +4,7 @@
 
 Aplicación de escritorio para visualizar, organizar y editar documentos PDF sin subir nada a servicios externos.
 
-El proyecto está en fase de construcción. Las iteraciones 1 a 3 cubren la apertura, la visualización, la navegación, el zoom, la rotación de vista, las miniaturas, la edición en memoria de texto e imágenes, la redacción permanente y la exportación segura a un archivo nuevo. La iteración 4 corrige el redimensionado y la exportación en páginas rotadas o recortadas, embebe las fuentes y avisa del texto que no cabe. La iteración 5 añade errores de exportación accionables, accesibilidad por teclado, pruebas con documentos de 100 páginas, empaquetado con PyInstaller e integración continua. La iteración 6 añade búsqueda de texto, información del documento, rotación/reordenación/eliminación/extracción de páginas y reemplazo de imágenes incrustadas.
+El proyecto está en fase de construcción. Las iteraciones 1 a 3 cubren la apertura, la visualización, la navegación, el zoom, la rotación de vista, las miniaturas, la edición en memoria de texto e imágenes, la redacción permanente y la exportación segura a un archivo nuevo. La iteración 4 corrige el redimensionado y la exportación en páginas rotadas o recortadas, embebe las fuentes y avisa del texto que no cabe. La iteración 5 añade errores de exportación accionables, accesibilidad por teclado, pruebas con documentos de 100 páginas, empaquetado con PyInstaller e integración continua. La iteración 6 añade búsqueda de texto, información del documento, rotación/reordenación/eliminación/extracción de páginas y reemplazo de imágenes incrustadas. La iteración 7 añade dibujo libre con color y grosor configurables, con trazos vectoriales que se pueden seleccionar y redimensionar.
 
 - Requisitos y criterios de aceptación: [docs/requirements.md](docs/requirements.md)
 - Plan de trabajo y estado: [PLAN.md](PLAN.md)
@@ -92,9 +92,10 @@ Los cambios se guardan **solo en memoria** durante la sesión: el PDF original n
 2. **Redactar región** (`Ctrl+Shift+X`): arrastra sobre el contenido que quieras eliminar. Se pide confirmación porque, al exportar, el contenido subyacente se borra de forma permanente del archivo nuevo. La región se muestra en negro y se puede mover, redimensionar o eliminar como cualquier otro objeto antes de exportar.
 3. **Añadir texto** (`Ctrl+T`): escribe el contenido y elige fuente, tamaño, color y alineación. Si hay una región seleccionada, el texto ocupa esa región; si no, la herramienta queda activa y el texto se coloca con un clic. Puedes redactar una zona y escribir el texto corregido encima en el mismo paso. Las fuentes Helvetica, Times-Roman y Courier se embeben en el PDF, así que conservan el euro, los acentos y los alfabetos latinos; si el texto no cabe en su región o usa caracteres que la fuente no admite, el objeto se marca en rojo y la exportación se bloquea con un aviso que indica la página y el espacio que falta.
 4. **Insertar imagen** (`Ctrl+I`): admite PNG y JPEG de hasta 20 MB. Igual que el texto, usa la región seleccionada o el siguiente clic. La imagen se ajusta a la proporción original.
-5. **Mover y redimensionar**: con la herramienta **Seleccionar** (`Ctrl+Shift+V`), haz clic en un objeto para seleccionarlo. Con el objeto seleccionado, arrastra desde su cuerpo para moverlo o desde las asas de las esquinas para cambiar su tamaño; el cursor cambia al acercarte a cada zona. Las imágenes se estiran libremente; mantén pulsada **Shift** mientras arrastras un asa para conservar su proporción. El panel **Propiedades** permite introducir X, Y, ancho y alto en puntos PDF.
-6. **Eliminar** (`Supr`): borra el objeto seleccionado.
-7. **Deshacer / Rehacer** (`Ctrl+Z` / `Ctrl+Y`): recorre el historial completo de la sesión, incluidas las redacciones y las operaciones de página.
+5. **Dibujar** (`Ctrl+Shift+D`): arrastra sobre la página para dibujar a mano alzada. La barra **Dibujo** permite elegir el color y el grosor, de 0,5 a 50 pt. La herramienta permanece activa después de cada trazo para dibujar varios seguidos; cambia a **Seleccionar** u otra herramienta para salir. Los trazos se guardan como vectores y se pueden seleccionar, mover, redimensionar, eliminar, deshacer y rehacer como cualquier otro objeto. Al redimensionar cambia la forma, pero no el grosor. Dibujar sobre texto solo lo tapa visualmente: usa **Redactar región** para eliminar el contenido subyacente de forma permanente.
+6. **Mover y redimensionar**: con la herramienta **Seleccionar** (`Ctrl+Shift+V`), haz clic en un objeto para seleccionarlo. Con el objeto seleccionado, arrastra desde su cuerpo para moverlo o desde las asas de las esquinas para cambiar su tamaño; el cursor cambia al acercarte a cada zona. Las imágenes se estiran libremente; mantén pulsada **Shift** mientras arrastras un asa para conservar su proporción. El panel **Propiedades** permite introducir X, Y, ancho y alto en puntos PDF.
+7. **Eliminar** (`Supr`): borra el objeto seleccionado.
+8. **Deshacer / Rehacer** (`Ctrl+Z` / `Ctrl+Y`): recorre el historial completo de la sesión, incluidas las redacciones, los trazos y las operaciones de página.
 
 La barra de estado muestra **Cambios sin exportar** cuando hay ediciones activas. Al cerrar el documento, abrir otro PDF o salir, la aplicación ofrece **Guardar**, **Descartar** o **Cancelar**.
 
@@ -103,10 +104,10 @@ La barra de estado muestra **Cambios sin exportar** cuando hay ediciones activas
 1. Pulsa **Exportar como…** (`Ctrl+Shift+S`) o usa Archivo → Exportar como…
 2. Elige un nombre y una carpeta distintos del PDF original. La aplicación rechaza guardar sobre el original y propone `nombre-editado.pdf`, `nombre-editado-2.pdf`, … para no pisar una exportación anterior.
 3. Si hay redacciones, confirma que se aplicarán de forma permanente.
-4. Bene PDF aplica las redacciones, inserta el texto e imágenes nuevos, añade la rotación de página y, por último, reordena y elimina las páginas según la copia de trabajo.
+4. Bene PDF aplica las redacciones, inserta el texto, las imágenes y los trazos nuevos, añade la rotación de página y, por último, reordena y elimina las páginas según la copia de trabajo.
 5. Bene PDF escribe primero en un archivo temporal, lo reabre para validarlo y solo entonces reemplaza el destino. Si algo falla, el archivo original y el destino anterior quedan intactos; el aviso de error lo indica de forma explícita.
 
-El archivo exportado puede abrirse de nuevo y contiene el texto, las imágenes, las redacciones, los reemplazos de imagen y la disposición de páginas aplicadas. La redacción elimina el texto subyacente (no solo lo tapa) y, en páginas escaneadas, borra únicamente los píxeles de la región marcada.
+El archivo exportado puede abrirse de nuevo y contiene el texto, las imágenes, los trazos, las redacciones, los reemplazos de imagen y la disposición de páginas aplicadas. La redacción elimina el texto subyacente (no solo lo tapa) y, en páginas escaneadas, borra únicamente los píxeles de la región marcada.
 
 Para guardar solo algunas páginas, usa **Página → Extraer páginas…**; la extracción crea un archivo nuevo y no cambia la sesión de trabajo.
 
@@ -150,6 +151,7 @@ Pulsa **Rotar vista 90°** o `Ctrl+R` para girar la página en pantalla 90° en 
 | Redactar región | `Ctrl+Shift+X` |
 | Añadir texto | `Ctrl+T` |
 | Insertar imagen | `Ctrl+I` |
+| Dibujar | `Ctrl+Shift+D` |
 | Buscar | `Ctrl+F` |
 | Buscar siguiente | `F3` |
 | Buscar anterior | `Shift+F3` |
@@ -177,7 +179,7 @@ El registro rota a 2 MB, conserva tres copias y nunca contiene el texto del docu
 
 ### Accesibilidad y teclado
 
-- Todos los controles principales tienen nombre y descripción accesibles: ventana, lienzo, navegación, selector de página, miniaturas, diálogo de texto y panel de propiedades.
+- Todos los controles principales tienen nombre y descripción accesibles: ventana, lienzo, navegación, selector de página, miniaturas, diálogo de texto, barra de dibujo y panel de propiedades.
 - Las etiquetas del formulario están asociadas a su campo y el recorrido con `Tab` sigue un orden lógico: navegación → miniaturas → lienzo, y texto → fuente → tamaño → color → alineación en el diálogo.
 - Cada miniatura anuncia «Página N» y su tooltip indica a qué página lleva.
 - El lienzo tiene foco explícito y actualiza su descripción con la página, el tipo y las dimensiones.
@@ -225,6 +227,9 @@ También se puede generar un único archivo con `--onefile`, aunque tarda más e
 - Las miniaturas reflejan el orden y la rotación adicional de las páginas, pero se generan a partir del PDF original: el texto, las imágenes y las redacciones añadidas no aparecen en ellas.
 - La rotación de vista no se guarda en el archivo; la rotación de página sí se aplica al exportar.
 - El reemplazo de imagen no está disponible para imágenes en línea, dentro de formularios o sin un `xref` fiable.
+- El dibujo solo admite trazos a mano alzada: todavía no hay líneas rectas, flechas, formas ni resaltador, y no se captura la presión ni la inclinación del lápiz.
+- Un trazo es contenido vectorial nuevo; tapa el texto, pero no lo elimina. Para borrarlo de forma permanente hay que usar la redacción.
+- El grosor de un trazo queda fijado al crearlo; redimensionarlo cambia su forma, no el ancho de línea.
 - La redacción puede afectar a objetos que se solapen con la región marcada; revísala antes de exportar.
 - Si una página concreta no se puede renderizar, se muestra un aviso y el detalle queda en el registro.
 - La interfaz se ha verificado en modo offscreen sobre Windows (y en CI sobre Ubuntu); falta una revisión visual con pantalla real, DPI y lector de pantalla antes de una versión distribuible.

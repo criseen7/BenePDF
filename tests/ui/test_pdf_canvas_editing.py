@@ -8,7 +8,13 @@ from PySide6.QtGui import QColor, QImage, QImageWriter, QMouseEvent
 from PySide6.QtWidgets import QApplication
 from pytestqt.qtbot import QtBot
 
-from bene.domain.editing import ImageObject, RedactionObject, TextObject
+from bene.domain.editing import (
+    ImageObject,
+    RedactionObject,
+    StrokeObject,
+    StrokeStyle,
+    TextObject,
+)
 from bene.domain.models import PdfRect
 from bene.presentation.viewer.coordinates import CoordinateMapper
 from bene.presentation.viewer.pdf_canvas import CanvasTool, PdfCanvas
@@ -196,6 +202,80 @@ class TestColocacion:
         qtbot.mouseClick(canvas, Qt.MouseButton.LeftButton, pos=QPoint(250, 150))
 
         assert points == [(200.0, 100.0)]
+
+
+class TestDibujo:
+    def test_el_trazo_emite_puntos_y_estilo(self, qtbot: QtBot) -> None:
+        canvas = make_canvas(qtbot)
+        canvas.set_tool(CanvasTool.DRAW)
+        style = StrokeStyle(color="#ff0000", width=4.0)
+        canvas.set_stroke_style(style)
+        strokes: list[tuple[tuple[tuple[float, float], ...], StrokeStyle]] = []
+        canvas.stroke_requested.connect(
+            lambda points, stroke_style: strokes.append((points, stroke_style))
+        )
+
+        qtbot.mousePress(canvas, Qt.MouseButton.LeftButton, pos=QPoint(10, 20))
+        qtbot.mouseMove(canvas, QPoint(60, 40))
+        qtbot.mouseMove(canvas, QPoint(80, 60))
+        qtbot.mouseRelease(canvas, Qt.MouseButton.LeftButton, pos=QPoint(80, 60))
+
+        assert strokes == [(((10.0, 20.0), (60.0, 40.0), (80.0, 60.0)), style)]
+
+    def test_un_clic_crea_un_punto(self, qtbot: QtBot) -> None:
+        canvas = make_canvas(qtbot)
+        canvas.set_tool(CanvasTool.DRAW)
+        strokes: list[object] = []
+        canvas.stroke_requested.connect(lambda points, _style: strokes.append(points))
+
+        qtbot.mouseClick(canvas, Qt.MouseButton.LeftButton, pos=QPoint(25, 35))
+
+        assert strokes == [((25.0, 35.0),)]
+
+    def test_el_trazo_respeta_la_rotacion_de_vista(self, qtbot: QtBot) -> None:
+        canvas = make_canvas(qtbot, rotation=90)
+        canvas.set_tool(CanvasTool.DRAW)
+        mapper = canvas.mapper
+        assert mapper is not None
+        strokes: list[object] = []
+        canvas.stroke_requested.connect(lambda points, _style: strokes.append(points))
+
+        qtbot.mousePress(canvas, Qt.MouseButton.LeftButton, pos=QPoint(10, 20))
+        qtbot.mouseRelease(canvas, Qt.MouseButton.LeftButton, pos=QPoint(10, 20))
+
+        assert strokes == [(mapper.to_page_clamped(10, 20),)]
+
+    def test_la_vista_previa_se_pinta_y_desaparece(self, qtbot: QtBot) -> None:
+        canvas = make_canvas(qtbot)
+        canvas.set_tool(CanvasTool.DRAW)
+        canvas.set_stroke_style(StrokeStyle(color="#ff0000", width=6.0))
+
+        qtbot.mousePress(canvas, Qt.MouseButton.LeftButton, pos=QPoint(10, 20))
+        qtbot.mouseMove(canvas, QPoint(80, 20))
+        preview = canvas.grab().toImage().pixelColor(45, 20)
+        assert preview.red() > 150 and preview.green() < 100
+
+        qtbot.mouseRelease(canvas, Qt.MouseButton.LeftButton, pos=QPoint(80, 20))
+        after = canvas.grab().toImage().pixelColor(45, 20)
+        assert after.red() > 200 and after.green() > 200 and after.blue() > 200
+
+    def test_pinta_un_trazo_guardado(self, qtbot: QtBot) -> None:
+        canvas = make_canvas(qtbot)
+        canvas.set_objects(
+            [
+                StrokeObject(
+                    object_id="trazo-1",
+                    page_index=0,
+                    points=((10.0, 20.0), (80.0, 20.0)),
+                    style=StrokeStyle(color="#0000ff", width=6.0),
+                )
+            ]
+        )
+
+        image = canvas.grab().toImage()
+
+        color = image.pixelColor(45, 20)
+        assert color.blue() > 150 and color.red() < 100
 
 
 class TestSeleccion:
