@@ -22,6 +22,7 @@ htmlcov/
 # Sistema e IDE
 .DS_Store
 Thumbs.db
+desktop.ini
 .idea/
 .vscode/
 *.swp

@@ -2,7 +2,7 @@
 
 Todos los cambios visibles del proyecto se registran aquí. El formato sigue
 [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa
-versionado semántico mientras no se publique una versión distribuible.
+versionado semántico mientras no se publique una versión estable.
 
 ## [Sin publicar]
 
@@ -25,6 +25,16 @@ versionado semántico mientras no se publique una versión distribuible.
 - La prueba de pintura del texto añadido ya no exige negro puro: el suavizado
   de fuentes de Linux tiñe los bordes y ahora se comprueban píxeles oscuros.
 
+### Licencia
+
+- El proyecto pasa a distribuirse como código fuente bajo GNU AGPL-3.0-only; se
+  añaden `LICENSE` y `THIRD_PARTY_NOTICES.md`.
+- `pyproject.toml` declara la licencia con la expresión SPDX `AGPL-3.0-only` y
+  los archivos de licencia.
+- El CI deja de publicar el ejecutable; solo lo construye y verifica.
+- `README.md` y `README.es.md` explican la licencia, los avisos de terceros y
+  que el repositorio no publica binarios.
+
 ### Documentación
 
 - `ADR-003` explica la eliminación de anotaciones y campos y limita el alcance:
@@ -33,6 +43,8 @@ versionado semántico mientras no se publique una versión distribuible.
   título y las limitaciones de la redacción.
 - `AGENTS.md` y `PLAN.md` recogen la hoja de ruta, los nuevos invariantes y la
   revisión de integridad.
+- `ADR-008` documenta la decisión de licenciar el proyecto bajo AGPL-3.0-only y
+  de distribuir solo código fuente.
 
 ## [0.1.0] - 2026-11-10
 
@@ -43,6 +55,3 @@ versionado semántico mientras no se publique una versión distribuible.
   permanente, exportación atómica, búsqueda, información del documento,
   operaciones de páginas, reemplazo de imágenes y dibujo libre vectorial.
 - Empaquetado con PyInstaller e integración continua en Windows y Ubuntu.
-
-[Sin publicar]: https://github.com/criseen7/BenePDF/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/criseen7/BenePDF/releases/tag/v0.1.0

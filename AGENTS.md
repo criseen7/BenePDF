@@ -38,6 +38,7 @@ Instalación: `python -m pip install -e ".[dev]"`. Build: instala el extra `buil
 - La redacción debe eliminar el contenido subyacente (hay pruebas de no extracción) y pedir confirmación; no la conviertas en una caja negra. `Page.apply_redactions` no borra anotaciones ni *widgets*: `_remove_redacted_annotations` los elimina solo si intersectan la región. Los metadatos y los adjuntos no se sanean por región.
 - El zoom con `Ctrl`+rueda se comunica con la señal `PdfCanvas.zoom_requested`; la ventana decide el nivel. El título de `MainWindow` añade `*` cuando `is_dirty`.
 - Nunca registres el texto del documento ni contraseñas. El registro rota a 2 MB y conserva tres copias.
+- La licencia del proyecto es `AGPL-3.0-only`. El repositorio publica solo código fuente; el CI construye y verifica el ejecutable, pero no lo sube como artefacto ni lo publica en Releases. Si se añade una release binaria, actualiza `THIRD_PARTY_NOTICES.md` y `ADR-008`.
 
 ## Pruebas y UI
 
@@ -49,4 +50,4 @@ Instalación: `python -m pip install -e ".[dev]"`. Build: instala el extra `buil
 
 ## Documentación
 
-`README.md`, `README.es.md`, `PLAN.md`, `CHANGELOG.md`, `BenePDF_Plan_Mejoras_Evolucion_Correcciones.md` y `docs/decisions/ADR-*.md` son las fuentes de contexto. La hoja de ruta marca prioridades; no la conviertas en un registro de cambios. Actualiza `PLAN.md` (estado y bitácora), `CHANGELOG.md` cuando el cambio sea visible y el ADR correspondiente cuando cambies decisiones o comportamiento.
+`README.md`, `README.es.md`, `PLAN.md`, `CHANGELOG.md`, `LICENSE`, `THIRD_PARTY_NOTICES.md`, `BenePDF_Plan_Mejoras_Evolucion_Correcciones.md` y `docs/decisions/ADR-*.md` son las fuentes de contexto. La hoja de ruta marca prioridades; no la conviertas en un registro de cambios. Actualiza `PLAN.md` (estado y bitácora), `CHANGELOG.md` cuando el cambio sea visible y el ADR correspondiente cuando cambies decisiones o comportamiento.

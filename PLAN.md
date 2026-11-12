@@ -1,7 +1,7 @@
 # PLAN — Bene PDF
 
-- **Estado:** iteraciones 1 a 7 implementadas; correcciones P0/P1 de la hoja de ruta aplicadas; pendiente la revisión visual en Windows
-- **Última actualización:** 2026-11-10
+- **Estado:** iteraciones 1 a 7 implementadas; correcciones P0/P1 de la hoja de ruta aplicadas; licenciamiento público AGPL-3.0-only definido; pendiente la revisión visual en Windows
+- **Última actualización:** 2026-11-12
 - **Hoja de ruta principal:** [BenePDF_Plan_Mejoras_Evolucion_Correcciones.md](BenePDF_Plan_Mejoras_Evolucion_Correcciones.md)
 - **Especificación de referencia:** [docs/requirements.md](docs/requirements.md)
 
@@ -10,7 +10,8 @@
 | Tema | Decisión | Motivo |
 |---|---|---|
 | Nombre | **Bene PDF** (provisional) | Elegido por el usuario; paquete Python `bene`, comando `bene` |
-| Distribución | Uso personal, sin distribución | Permite usar PyMuPDF bajo AGPL sin obligaciones de distribución |
+| Distribución | Repositorio público solo de código fuente; sin binarios en Releases | PyMuPDF exige AGPL o licencia comercial; publicar solo el código evita distribuir binarios y sus obligaciones adicionales |
+| Licencia | `AGPL-3.0-only`, titular `criseen7` | Es compatible con PyMuPDF y deja explícitos los términos de reutilización (ADR-008) |
 | Lenguaje | Python 3.12 (Windows nativo) | Es la versión instalada en la máquina objetivo y la que soportan todas las ruedas |
 | Interfaz | PySide6 6.12, textos en español | Qt cubre visor, diálogos y tareas en segundo plano; licencia LGPL |
 | Motor PDF | PyMuPDF 2.0 (`pymupdf`) tras el puerto `PdfEngine` | Render, inserción de texto e imágenes y redacción real con una sola dependencia |
@@ -19,8 +20,8 @@
 | Redacción | Se aplica antes que el contenido nuevo; texto, vectores, anotaciones y campos que intersectan se eliminan, las imágenes se redactan por píxeles | Permite «redactar y escribir encima» sin destruir escaneos completos y evita que queden datos sensibles en anotaciones o formularios (RN-004, RNF-008) |
 | Hoja de ruta | `BenePDF_Plan_Mejoras_Evolucion_Correcciones.md` es la referencia de prioridades; `PLAN.md` registra la ejecución | Separa el plan estratégico del historial de iteraciones y evita duplicar decisiones |
 | Dibujo libre | Trazos vectoriales con puntos en coordenadas visibles y grosor en puntos PDF | Se seleccionan y transforman como el resto de objetos y no pierden calidad al ampliar (RF-026, ADR-007) |
-| Empaquetado | PyInstaller 6 en modo carpeta (`--onedir`) | Incluye Qt, MuPDF y fuentes sin exigir Python en destino (RNF-016) |
-| CI | GitHub Actions en Windows y Ubuntu, pruebas lentas aparte | Detecta regresiones de plataforma y mantiene la suite rápida (RNF-017) |
+| Empaquetado | PyInstaller 6 en modo carpeta (`--onedir`), solo para verificar el build | Incluye Qt, MuPDF y fuentes sin exigir Python en destino; el repositorio no publica el ejecutable (RNF-016) |
+| CI | GitHub Actions en Windows y Ubuntu, pruebas lentas aparte; el trabajo de empaquetado no sube el `.exe` | Detecta regresiones de plataforma, mantiene la suite rápida y respeta la distribución solo de código (RNF-017) |
 | Miniaturas | Iteración 2 | Mantener la primera iteración pequeña y verificable |
 
 Las decisiones con consecuencias arquitectónicas se documentan en `docs/decisions/`.
@@ -345,7 +346,7 @@ renderice sin problemas. Todo con integración continua en Windows y Ubuntu.
 - [x] `ruff check`, `ruff format --check`, `mypy` y `pytest` offscreen
 - [x] Cobertura publicada como artefacto
 - [x] Trabajo de pruebas lentas
-- [x] Trabajo de empaquetado con comprobación del `.exe` y artefacto descargable
+- [x] Trabajo de empaquetado con comprobación del `.exe`; el artefacto descargable se retiró al adoptar la distribución solo de código (ADR-008)
 
 ### Paso 6 — Cierre documental
 
@@ -636,16 +637,29 @@ EditorPDF-Local/
 | 2026-11-10 | README bilingüe: `README.md` pasa a ser la guía principal en inglés y el contenido español se conserva en `README.es.md`, con enlaces cruzados entre ambos. Se anota que la interfaz y la documentación detallada siguen en español. |
 | 2026-11-10 | Iteración 7 completada. Dibujo libre con `StrokeStyle`, `StrokeObject` y `AddStrokeCommand`; puntos en coordenadas visibles y caja calculada con el grosor; mover y redimensionar transforman los puntos y conservan el grosor; herramienta **Dibujar** (`Ctrl+Shift+D`) con vista previa, deduplicación y barra de color/grosor; panel de propiedades y memoria del último estilo de texto; exportación vectorial con `draw_polyline`/`draw_circle`, rotaciones, CropBox, redacción y páginas eliminadas; `stroke_count` en el resumen; ADR-007, requisitos y README bilingüe actualizados. 605 pruebas rápidas y 2 lentas en verde, `ruff` y `mypy` limpios. |
 | 2026-11-10 | Adoptada `BenePDF_Plan_Mejoras_Evolucion_Correcciones.md` como hoja de ruta principal. Revisión de integridad: `Page.apply_redactions` no borraba anotaciones ni campos de formulario; ahora `_remove_redacted_annotations` elimina los que intersectan la región y conserva los de fuera. Pruebas nuevas con un PDF sintético de anotaciones y formularios, redacción parcial de texto y vectores. UX: zoom con `Ctrl`+rueda mediante `PdfCanvas.zoom_requested` y marca `*` en el título cuando hay cambios sin exportar. Se documenta que la redacción por región no sanea metadatos ni adjuntos. ADR-003, README bilingüe, AGENTS, PLAN y CHANGELOG actualizados. 613 pruebas rápidas y 2 lentas en verde, `ruff` y `mypy` limpios. |
+| 2026-11-12 | Licenciamiento público definido: BenePDF pasa a `AGPL-3.0-only` con titular `criseen7`. Se añaden `LICENSE` y `THIRD_PARTY_NOTICES.md`, se declara la licencia en `pyproject.toml` con SPDX y se actualizan README bilingüe, ADR-001, ADR-005 y el nuevo ADR-008. El CI deja de subir `BenePDF-windows`: sigue construyendo y verificando el ejecutable, pero no lo publica. Revisión inicial del historial sin secretos reales ni binarios rastreados. |
 
 ## 16. Notas de entorno
 
 - El paquete y el comando se llaman `bene`. El bloque de estructura de `docs/requirements.md` todavía usa `pdf-studio-local`/`pdf_studio` porque es el documento original del usuario; este plan y el código usan `bene`.
 - **Desviación del plan original:** las rutas se calculan con la biblioteca estándar (`LOCALAPPDATA` en Windows; `XDG_DATA_HOME`/`XDG_STATE_HOME` en Linux) y no con `QStandardPaths`. Motivo: mantener `config.py`, el registro y `bootstrap.py` libres de Qt, de modo que se puedan probar sin `QApplication` y que el arranque no dependa de la inicialización gráfica. En Windows la ubicación es la misma que daría Qt: `%LOCALAPPDATA%\bene-pdf`.
 - El registro técnico está en `%LOCALAPPDATA%\bene-pdf\logs\bene.log` (Windows) o `$XDG_STATE_HOME/bene-pdf/logs/bene.log` (Linux). Rota a 2 MB y conserva 3 copias.
-- El repositorio usa identidad git local `Crise <crise@localhost>`; cámbiala con `git config user.name` / `git config user.email` si vas a publicarlo.
+- La identidad git local es `Crise <crise@localhost>`. El aviso de copyright usa el seudónimo `criseen7`; no se publica un correo real.
 - Windows: `py -3.12 -m venv .venv`, luego `python -m pip install -e ".[dev]"`.
 - Las comprobaciones se lanzan desde WSL llamando al Python de Windows: `.venv/Scripts/python.exe`.
 - Tamaño del entorno completo: 992 MB (PySide6 653 MB, PyMuPDF 105 MB y sus extras 99 MB). Con PyInstaller instalado, el entorno crece otros ~20 MB.
 - El ejecutable se construye con `python scripts/build_app.py` y queda en `dist/BenePDF/` (ignorado por git). El modo `--onefile` está disponible, pero tarda más en arrancar.
 - Las pruebas lentas se ejecutan con `pytest -m slow`; la suite normal las excluye mediante `addopts`.
 - CI usa `QT_QPA_PLATFORM=offscreen` y, en Ubuntu, instala las bibliotecas de sistema que necesitan los wheels de PySide6.
+
+## 17. Publicación del repositorio
+
+- [x] `LICENSE` con AGPL-3.0-only y copyright de `criseen7`.
+- [x] `THIRD_PARTY_NOTICES.md` con las licencias de PyMuPDF/MuPDF, PySide6/Qt, las fuentes Liberation y Python.
+- [x] `pyproject.toml` con licencia SPDX y archivos de licencia.
+- [x] README bilingüe, ADR-001, ADR-005, ADR-008, PLAN y CHANGELOG actualizados.
+- [x] El CI construye el ejecutable solo para verificarlo y no lo sube como artefacto.
+- [x] Revisión inicial del historial: sin secretos reales, binarios, `.env` ni PDFs rastreados; los blobs grandes son las fuentes Liberation.
+- [ ] Borrar los artefactos antiguos `BenePDF-windows` de GitHub Actions antes de hacer público el repositorio.
+- [ ] Confirmar que no hay Releases ni paquetes publicados.
+- [ ] Revisar la descripción y la licencia detectada por GitHub.

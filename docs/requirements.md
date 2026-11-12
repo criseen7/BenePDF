@@ -126,7 +126,7 @@ Prioridades: **M** = obligatorio para el MVP; **S** = siguiente fase; **F** = fu
 | RNF-015 | Observabilidad | Registrar errores técnicos con rotación y sin guardar por defecto el texto completo de los documentos en los logs. |
 | RNF-016 | Distribución | La aplicación debe poder empaquetarse como ejecutable instalable; las dependencias nativas de OCR, si se incluyen, deben documentarse. |
 | RNF-017 | Calidad | Mantener tipado gradual, formato consistente, análisis estático y pruebas automatizadas en integración continua. |
-| RNF-018 | Licenciamiento | Revisar licencias de todas las dependencias y fuentes antes de distribuir. La elección del motor PDF puede imponer condiciones distintas según se use AGPL, MPL, BSD u otra licencia. |
+| RNF-018 | Licenciamiento | Revisar licencias de todas las dependencias y fuentes antes de distribuir. La elección del motor PDF puede imponer condiciones distintas según se use AGPL, MPL, BSD u otra licencia. Resuelto para la distribución actual en `ADR-008`: AGPL-3.0-only y solo código fuente. |
 
 Los objetivos numéricos de rendimiento deben validarse con PDFs de prueba representativos; no son una garantía universal para documentos escaneados de gran resolución o con gráficos complejos.
 
@@ -224,7 +224,7 @@ Las coordenadas deben manejarse en un sistema consistente (coordenadas de págin
 | Empaquetado | PyInstaller | Producir builds por sistema operativo; probar rutas, plugins Qt y dependencias nativas. |
 | CI | GitHub Actions | Ejecutar pruebas y análisis estático en los sistemas soportados. |
 
-**Decisión pendiente antes de distribuir:** revisar la licencia y compatibilidad de cada biblioteca con el modelo de distribución del proyecto. PyMuPDF, por ejemplo, no debe elegirse ignorando sus condiciones AGPL/comerciales. Esta especificación no sustituye una revisión legal de licencias.
+**Decisión de licenciamiento:** resuelta en `docs/decisions/ADR-008-licenciamiento-publico.md`. BenePDF se distribuye como código fuente bajo `AGPL-3.0-only`, sin binarios, y usa PyMuPDF bajo su opción AGPL. Las licencias de las dependencias y fuentes se documentan en `THIRD_PARTY_NOTICES.md`. Esta especificación no sustituye una revisión legal de licencias.
 
 ## 8. Estructura propuesta del proyecto
 
@@ -470,12 +470,13 @@ La versión inicial se considera aceptable cuando:
 | PDFs complejos consumen mucha memoria o tardan en renderizar. | Medio | Renderizado por demanda, caché con límite y tareas en segundo plano. |
 | Firmas digitales dejan de ser válidas después de editar. | Medio | Aviso al abrir/editar y documentación explícita. |
 
-Decisiones pendientes antes del desarrollo completo:
+Decisiones de desarrollo:
 
-- Definir si el proyecto será de uso personal, de código abierto o comercial.
+- Licenciamiento y distribución: decidido como `AGPL-3.0-only` y solo código
+  fuente (ADR-008).
 - Confirmar sistemas operativos y versiones mínimas.
 - Decidir si OCR entra en el MVP o se entrega como módulo opcional.
-- Elegir motor PDF después de validar funciones requeridas y condiciones de licencia.
+- Motor PDF: elegido PyMuPDF 2.0 tras el puerto `PdfEngine` (ADR-001).
 - Establecer límites objetivo de tamaño de archivo, memoria y tiempo de respuesta.
 
 ## 16. Definición de terminado (Definition of Done)

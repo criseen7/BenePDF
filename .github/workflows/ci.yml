@@ -77,6 +77,7 @@ jobs:
       - name: Documentos grandes
         run: pytest -m slow
 
+  # Solo verificación: el repositorio no publica el ejecutable (ADR-008).
   empaquetado:
     name: Empaquetado (Windows)
     runs-on: windows-latest
@@ -104,10 +105,3 @@ jobs:
           if ($process.ExitCode -ne 0) {
             throw "El ejecutable terminó con el código $($process.ExitCode)"
           }
-
-      - name: Publicar el ejecutable
-        uses: actions/upload-artifact@v4
-        with:
-          name: BenePDF-windows
-          path: dist/BenePDF
-          if-no-files-found: error

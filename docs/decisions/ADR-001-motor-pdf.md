@@ -2,7 +2,7 @@
 
 - **Estado:** aceptada
 - **Fecha:** 2026-10-24
-- **Contexto del proyecto:** uso personal, sin distribución
+- **Contexto del proyecto:** repositorio público solo de código fuente, bajo AGPL-3.0
 
 ## Contexto
 
@@ -23,7 +23,7 @@ Se eligió 2.0 y no 1.28.x porque 2.0 corrige un fallo de `apply_redactions()` i
 
 ## Consecuencias
 
-- El proyecto queda bajo las condiciones **AGPL-3.0**: es válido para uso personal o para publicar el código bajo AGPL, pero no para distribuir un binario cerrado. Si se decide distribuir, este ADR debe revisarse antes de publicar.
+- El proyecto se publica como código fuente bajo **AGPL-3.0-only**. Se elige la opción AGPL de PyMuPDF y no se adquiere la licencia comercial de Artifex. Si en el futuro se quisiera distribuir un binario con otra licencia, este ADR debería revisarse antes de publicar.
 - Solo `infrastructure/pdf/pymupdf_engine.py` importa `pymupdf`. El resto del código depende del puerto, de modo que sustituir el motor no afecta a la interfaz ni al dominio.
 - El módulo correcto es `pymupdf`; `import fitz` sigue existiendo pero emite `FutureWarning`.
 - PyMuPDF 2.0 arrastra dependencias que el MVP no usa (`pymupdf-layout`, `pymupdf4llm`, `onnxruntime`, `numpy`). Medido en Windows con el entorno completo: 992 MB de `.venv`, de los cuales 105 MB son PyMuPDF y 99 MB sus extras. No se pueden excluir, pero solo afectan al tamaño de desarrollo: PyInstaller empaquetará lo que se importe.
@@ -40,4 +40,4 @@ Se eligió 2.0 y no 1.28.x porque 2.0 corrige un fallo de `apply_redactions()` i
 
 ## Revisión
 
-Si el proyecto pasa a distribuirse, evaluar de nuevo `pypdfium2` + `pikepdf` o una licencia comercial de Artifex. La decisión afecta solo al adaptador.
+Si se quisiera abandonar la AGPL para usar una licencia permisiva o propietaria, habría que evaluar de nuevo `pypdfium2` + `pikepdf` o adquirir una licencia comercial de Artifex. La decisión afecta solo al adaptador. El licenciamiento público y la distribución solo de código fuente se detallan en [ADR-008](ADR-008-licenciamiento-publico.md).

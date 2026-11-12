@@ -11,6 +11,8 @@ El proyecto está en fase de construcción. Las iteraciones 1 a 3 cubren la aper
 - Plan de trabajo, estado y bitácora de iteraciones: [PLAN.md](PLAN.md)
 - Decisiones de arquitectura: [docs/decisions/](docs/decisions/)
 - Cambios por versión: [CHANGELOG.md](CHANGELOG.md)
+- Licencia: [AGPL-3.0-only](LICENSE)
+- Avisos de terceros: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
 
 ## Requisitos
 
@@ -186,7 +188,7 @@ El registro rota a 2 MB, conserva tres copias y nunca contiene el texto del docu
 - Cada miniatura anuncia «Página N» y su tooltip indica a qué página lleva.
 - El lienzo tiene foco explícito y actualiza su descripción con la página, el tipo y las dimensiones.
 
-La comprobación automática cubre nombres, etiquetas y orden de tabulación. Antes de una versión distribuible conviene revisarla con un lector de pantalla real (Narrador en Windows u Orca en Linux).
+La comprobación automática cubre nombres, etiquetas y orden de tabulación. Antes de una versión estable conviene revisarla con un lector de pantalla real (Narrador en Windows u Orca en Linux).
 
 ### Documentos grandes
 
@@ -219,7 +221,7 @@ También se puede generar un único archivo con `--onefile`, aunque tarda más e
 
 - **Windows y Ubuntu:** `ruff check`, `ruff format --check`, `mypy` y `pytest` con `QT_QPA_PLATFORM=offscreen`.
 - **Windows:** cobertura, pruebas lentas (`pytest -m slow`) y construcción del ejecutable.
-- El artefacto `BenePDF-windows` se publica al final del trabajo de empaquetado.
+- El trabajo de empaquetado construye y verifica el ejecutable, pero no lo publica. Este repositorio distribuye solo código fuente.
 
 ### Limitaciones de esta iteración
 
@@ -235,7 +237,7 @@ También se puede generar un único archivo con `--onefile`, aunque tarda más e
 - La redacción puede afectar a objetos que se solapen con la región marcada; revísala antes de exportar.
 - La redacción elimina el contenido, las anotaciones y los campos de formulario que intersectan la región, pero no limpia los metadatos del documento ni los archivos adjuntos incrustados.
 - Si una página concreta no se puede renderizar, se muestra un aviso y el detalle queda en el registro.
-- La interfaz se ha verificado en modo offscreen sobre Windows (y en CI sobre Ubuntu); falta una revisión visual con pantalla real, DPI y lector de pantalla antes de una versión distribuible.
+- La interfaz se ha verificado en modo offscreen sobre Windows (y en CI sobre Ubuntu); falta una revisión visual con pantalla real, DPI y lector de pantalla antes de una versión estable.
 - Linux se prueba en CI en modo offscreen, pero no se ha validado visualmente.
 - El ejecutable incluye Qt y MuPDF, así que ocupa cientos de MB. Es el coste de no exigir Python en la máquina de destino.
 - La comprobación del ejecutable en CI se limita a `--version` y a la presencia de recursos; abrir, editar y exportar en una máquina Windows limpia sigue siendo una prueba manual pendiente.
@@ -278,6 +280,28 @@ src/bene/
 
 La interfaz no importa PyMuPDF: solo conoce los puertos de la capa de aplicación. Hay una prueba que verifica esa frontera.
 
-## Licencias
+## Licencia
 
-El proyecto es de uso personal y no se distribuye. Usa PyMuPDF bajo su licencia AGPL-3.0, lo que impide distribuir la aplicación sin cumplir esa licencia. Ver [ADR-001](docs/decisions/ADR-001-motor-pdf.md).
+BenePDF es software libre distribuido bajo la **GNU Affero General Public
+License v3.0 only** (`AGPL-3.0-only`). Puedes usar, estudiar, modificar y
+redistribuir el código fuente conforme a los términos de esa licencia. Consulta
+[LICENSE](LICENSE) para ver el texto completo.
+
+Este repositorio distribuye **solo código fuente**: no publica ejecutables ni
+versiones binarias. El flujo de integración continua construye el ejecutable
+únicamente para verificar el empaquetado y lo descarta al terminar.
+
+Las dependencias principales conservan sus propias licencias:
+
+- PyMuPDF 2.x y el MuPDF incluido: AGPL-3.0 o licencia comercial de Artifex.
+  BenePDF usa la opción AGPL-3.0 y licencia su propio código como
+  AGPL-3.0-only.
+- PySide6, shiboken6 y Qt 6.12: LGPL-3.0-only (o las opciones GPL/comercial).
+  BenePDF usa la opción LGPL-3.0.
+- Fuentes Liberation: SIL Open Font License 1.1, incluida en
+  [`src/bene/assets/fonts/OFL.txt`](src/bene/assets/fonts/OFL.txt).
+
+Consulta [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) para ver los enlaces a
+los textos de licencia y las obligaciones que se aplicarían si algún día se
+publicaran binarios. La decisión está documentada en
+[ADR-008](docs/decisions/ADR-008-licenciamiento-publico.md).

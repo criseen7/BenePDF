@@ -13,6 +13,8 @@ The project is under construction. Iterations 1 to 3 cover opening, viewing, nav
 - Work plan, status, and iteration log: [PLAN.md](PLAN.md)
 - Architecture decisions: [docs/decisions/](docs/decisions/)
 - Changes by version: [CHANGELOG.md](CHANGELOG.md)
+- License: [AGPL-3.0-only](LICENSE)
+- Third-party notices: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
 
 ## Requirements
 
@@ -188,7 +190,7 @@ The log rotates at 2 MB, keeps three copies, and never contains the document tex
 - Each thumbnail announces “Page N”, and its tooltip indicates which page it leads to.
 - The canvas has explicit focus and updates its description with the page, type, and dimensions.
 
-Automated checks cover names, labels, and tab order. Before a distributable version, it should be reviewed with a real screen reader (Narrator on Windows or Orca on Linux).
+Automated checks cover names, labels, and tab order. Before a stable release, it should be reviewed with a real screen reader (Narrator on Windows or Orca on Linux).
 
 ### Large documents
 
@@ -221,7 +223,7 @@ You can also generate a single file with `--onefile`, although it takes longer t
 
 - **Windows and Ubuntu:** `ruff check`, `ruff format --check`, `mypy`, and `pytest` with `QT_QPA_PLATFORM=offscreen`.
 - **Windows:** coverage, slow tests (`pytest -m slow`), and the executable build.
-- The `BenePDF-windows` artifact is published at the end of the packaging job.
+- The packaging job builds and verifies the executable, but does not publish it. This repository distributes source code only.
 
 ### Limitations of this iteration
 
@@ -237,7 +239,7 @@ You can also generate a single file with `--onefile`, although it takes longer t
 - Redaction may affect objects that overlap the marked region; review it before exporting.
 - Redaction removes page content, annotations, and form fields that intersect the region, but it does not clean document metadata or embedded attachments.
 - If a particular page cannot be rendered, a warning is shown and the details are written to the log.
-- The interface has been verified in offscreen mode on Windows (and in CI on Ubuntu); a visual review with a real display, DPI, and screen reader is still pending before a distributable version.
+- The interface has been verified in offscreen mode on Windows (and in CI on Ubuntu); a visual review with a real display, DPI, and screen reader is still pending before a stable release.
 - Linux is tested in CI in offscreen mode but has not been validated visually.
 - The executable includes Qt and MuPDF, so it takes up hundreds of MB. That is the cost of not requiring Python on the target machine.
 - Executable checks in CI are limited to `--version` and the presence of resources; opening, editing, and exporting on a clean Windows machine is still a pending manual test.
@@ -280,6 +282,28 @@ src/bene/
 
 The interface does not import PyMuPDF: it only knows the ports of the application layer. A test verifies that boundary.
 
-## Licenses
+## License
 
-The project is for personal use and is not distributed. It uses PyMuPDF under its AGPL-3.0 license, which prevents distributing the application without complying with that license. See [ADR-001](docs/decisions/ADR-001-motor-pdf.md).
+BenePDF is free software distributed under the **GNU Affero General Public
+License v3.0 only** (`AGPL-3.0-only`). You may use, study, modify, and
+redistribute the source code under the terms of that license. See
+[LICENSE](LICENSE) for the full text.
+
+This repository distributes **source code only**: it does not publish prebuilt
+executables or binary releases. The continuous integration workflow builds the
+executable only to verify packaging and discards it afterwards.
+
+The main dependencies keep their own licenses:
+
+- PyMuPDF 2.x and the included MuPDF: AGPL-3.0 or an Artifex commercial
+  license. BenePDF uses the AGPL-3.0 option and licenses its own code as
+  AGPL-3.0-only.
+- PySide6, shiboken6, and Qt 6.12: LGPL-3.0-only (or GPL/commercial options).
+  BenePDF uses the LGPL-3.0 option.
+- Liberation fonts: SIL Open Font License 1.1, included in
+  [`src/bene/assets/fonts/OFL.txt`](src/bene/assets/fonts/OFL.txt).
+
+See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for links to the license
+texts and for the obligations that would apply if binaries were ever published.
+The licensing decision is documented in
+[ADR-008](docs/decisions/ADR-008-licenciamiento-publico.md).

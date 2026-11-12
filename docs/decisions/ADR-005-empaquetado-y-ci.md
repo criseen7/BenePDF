@@ -15,8 +15,10 @@ la aplicación necesita en tiempo de ejecución:
 - los plugins y bibliotecas de Qt que usa PySide6;
 - las fuentes Liberation y su licencia OFL, declaradas como `package-data`.
 
-El proyecto sigue siendo de uso personal y no se distribuye, así que la
-licencia AGPL de PyMuPDF no cambia en esta iteración (ADR-001).
+El proyecto se publica como código fuente bajo AGPL-3.0-only y no publica
+binarios. El empaquetado de esta iteración se conserva como verificación de CI,
+no como una release (ADR-001 y ADR-008). Los avisos de las dependencias se
+documentan en `THIRD_PARTY_NOTICES.md`.
 
 ## Decisión
 
@@ -77,7 +79,7 @@ de `dist/BenePDF/_internal`.
 |---|---|---|
 | `calidad` | Windows y Ubuntu | `ruff check`, `ruff format --check`, `mypy`, `pytest` offscreen y cobertura en Windows |
 | `lento` | Windows | `pytest -m slow` con documentos de 100 páginas |
-| `empaquetado` | Windows | build con PyInstaller, comprobación del `.exe` y artefacto `BenePDF-windows` |
+| `empaquetado` | Windows | build con PyInstaller y comprobación del `.exe`; no se publica el artefacto |
 
 Las pruebas de interfaz se ejecutan con `QT_QPA_PLATFORM=offscreen`, igual que
 en local. En Ubuntu se instalan las bibliotecas de sistema que necesitan los
@@ -95,6 +97,10 @@ wheels de PySide6 (`libegl1`, `libgl1`, `libxkbcommon-x11-0`, `libdbus-1-3` y
   marcador `slow` y CI las ejecuta en un trabajo aparte.
 - La verificación automática no sustituye a probar el ejecutable en una máquina
   Windows limpia. Esa comprobación manual sigue pendiente antes de cerrar una
-  versión distribuible.
-- Si en el futuro se distribuye el binario, hay que resolver la licencia AGPL de
-  PyMuPDF y añadir un `LICENSE` antes de publicar.
+  versión estable.
+- El repositorio distribuye solo código fuente. El trabajo de empaquetado
+  construye el ejecutable y comprueba que arranca, pero no lo sube como
+  artefacto ni lo publica en Releases. Si en el futuro se distribuyera un
+  binario, habría que incluir `LICENSE` y `THIRD_PARTY_NOTICES.md`, ofrecer el
+  código fuente correspondiente y cumplir las obligaciones de la AGPL y de la
+  LGPL de Qt/PySide6.
