@@ -536,10 +536,11 @@ class TestPintura:
 
         pixmap = canvas.grab()
 
-        colors = {
-            pixmap.toImage().pixelColor(x, y).name() for x in range(15, 55) for y in range(25, 75)
-        }
-        assert "#000000" in colors
+        colors = [pixmap.toImage().pixelColor(x, y) for x in range(15, 55) for y in range(25, 75)]
+        # El texto es negro, pero el suavizado de fuentes varía entre Windows y
+        # Linux y puede teñir los píxeles de borde. Basta con que haya píxeles
+        # oscuros dentro de la caja del texto.
+        assert any(color.lightness() < 128 for color in colors)
 
     def test_pinta_la_imagen_anadida(self, qtbot: QtBot) -> None:
         canvas = make_canvas(qtbot)

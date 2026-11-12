@@ -22,6 +22,8 @@ versionado semántico mientras no se publique una versión distribuible.
   intersecta la región; antes podían conservar texto o valores extraíbles.
 - Se añadieron pruebas de redacción de anotaciones, formularios, texto
   parcialmente intersectado y vectores.
+- La prueba de pintura del texto añadido ya no exige negro puro: el suavizado
+  de fuentes de Linux tiñe los bordes y ahora se comprueban píxeles oscuros.
 
 ### Documentación
 
